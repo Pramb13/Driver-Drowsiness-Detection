@@ -32,11 +32,14 @@ def real_time_detection(model):
         results = model(frame)
         frame = np.squeeze(results.render())
 
-        cv2.imshow("Real-Time YOLOv5 Detection", frame)
+        # Convert frame to RGB for Streamlit display
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        # Display frame in Streamlit
+        st.image(frame_rgb, channels="RGB", use_column_width=True)
         if cv2.waitKey(10) & 0xFF == ord('q'):
             break
     cap.release()
-    cv2.destroyAllWindows()
 
 # Function for Android Camera Feed Detection
 def android_feed_detection(model, url):
@@ -50,13 +53,16 @@ def android_feed_detection(model, url):
             results = model(img)
             img = np.squeeze(results.render())
 
-            cv2.imshow("Android Camera Feed Detection", img)
+            # Convert image to RGB for Streamlit display
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+            # Display image in Streamlit
+            st.image(img_rgb, channels="RGB", use_column_width=True)
             if cv2.waitKey(1) == 27:  # Esc key to exit
                 break
         except Exception as e:
             st.error(f"Error fetching Android feed: {e}")
             break
-    cv2.destroyAllWindows()
 
 # Streamlit App
 st.title("YOLOv5 Object Detection App")
