@@ -1,7 +1,7 @@
-streamlit
-onnxruntime
-opencv-python-headless
-numpy
-Pillow
+opencv-python
+dlib
 imutils
-requests
+scipy
+pygame
+streamlit
+streamlit-webrtc
