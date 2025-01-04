@@ -1,8 +1,7 @@
-streamlit 
-torch
+streamlit
+onnxruntime
+opencv-python-headless
 numpy
-matplotlib
-Pillows
-opencv-python
+Pillow
 imutils
 requests
