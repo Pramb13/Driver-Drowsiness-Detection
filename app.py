@@ -1,71 +1,75 @@
-import streamlit as st
 import cv2
-import numpy as np
-from PIL import Image
-import requests
+import dlib
 import imutils
-import onnxruntime as ort
+from imutils import face_utils
+from scipy.spatial import distance
+from pygame import mixer
+import streamlit as st
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 
-# Load YOLOv5 Model using ONNX Runtime
-@st.cache_resource
-def load_onnx_model(model_path):
-    session = ort.InferenceSession(model_path)
-    return session
+# Initialize mixer
+mixer.init()
+mixer.music.load("music.wav")
 
-# Preprocess Input Image
-def preprocess_image(image, input_shape=(640, 640)):
-    resized_image = cv2.resize(image, input_shape)
-    img = cv2.cvtColor(resized_image, cv2.COLOR_BGR2RGB)
-    img = img.astype(np.float32) / 255.0
-    img = np.transpose(img, (2, 0, 1))  # Convert HWC to CHW
-    img = np.expand_dims(img, axis=0)  # Add batch dimension
-    return img
+# Function to calculate Eye Aspect Ratio (EAR)
+def eye_aspect_ratio(eye):
+    A = distance.euclidean(eye[1], eye[5])
+    B = distance.euclidean(eye[2], eye[4])
+    C = distance.euclidean(eye[0], eye[3])
+    ear = (A + B) / (2.0 * C)
+    return ear
 
-# Post-process YOLO Outputs
-def postprocess_output(outputs, original_image, conf_threshold=0.5):
-    boxes, scores, labels = [], [], []
-    for output in outputs[0]:
-        conf = output[4]  # Confidence score
-        if conf > conf_threshold:
-            x, y, w, h = output[:4]  # Bounding box coordinates
-            label = int(output[5])  # Class label
-            boxes.append([int(x), int(y), int(w), int(h)])
-            scores.append(conf)
-            labels.append(label)
-    
-    for box in boxes:
-        x, y, w, h = box
-        cv2.rectangle(original_image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+# Load the dlib model and facial landmarks predictor
+detector = dlib.get_frontal_face_detector()
+predictor = dlib.shape_predictor("models/shape_predictor_68_face_landmarks.dat")
 
-    return original_image
+# Landmark indices for the eyes
+(lStart, lEnd) = face_utils.FACIAL_LANDMARKS_68_IDXS["left_eye"]
+(rStart, rEnd) = face_utils.FACIAL_LANDMARKS_68_IDXS["right_eye"]
 
-# Streamlit App
-st.title("YOLOv5 Object Detection App (ONNX Runtime)")
-st.sidebar.title("Options")
+# Thresholds
+THRESHOLD = 0.25
+FRAME_CHECK = 20
 
-# Sidebar Options
-mode = st.sidebar.radio(
-    "Select Mode",
-    ("Image Detection", "Real-Time Detection", "Android Camera Feed"),
-)
+class DrowsinessDetection(VideoProcessorBase):
+    def __init__(self):
+        self.flag = 0
 
-# Load ONNX Model
-onnx_model_path = st.sidebar.text_input("Enter ONNX Model Path", value="yolov5s.onnx")
-model = load_onnx_model(onnx_model_path)
+    def recv(self, frame):
+        frame = frame.to_ndarray(format="bgr24")
+        frame = imutils.resize(frame, width=450)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-# Image Detection
-if mode == "Image Detection":
-    st.subheader("Image Detection")
-    uploaded_file = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
-    if uploaded_file:
-        image = Image.open(uploaded_file)
-        image_np = np.array(image)
-        st.image(image, caption="Uploaded Image", use_column_width=True)
+        subjects = detector(gray, 0)
+        for subject in subjects:
+            shape = predictor(gray, subject)
+            shape = face_utils.shape_to_np(shape)
 
-        # Detection
-        with st.spinner("Detecting..."):
-            input_image = preprocess_image(image_np)
-            outputs = model.run(None, {"images": input_image})
-            result_img = postprocess_output(outputs, image_np)
+            leftEye = shape[lStart:lEnd]
+            rightEye = shape[rStart:rEnd]
+            leftEAR = eye_aspect_ratio(leftEye)
+            rightEAR = eye_aspect_ratio(rightEye)
+            ear = (leftEAR + rightEAR) / 2.0
 
-        st.image(result_img, caption="Detection Result", use_column_width=True)
+            leftEyeHull = cv2.convexHull(leftEye)
+            rightEyeHull = cv2.convexHull(rightEye)
+            cv2.drawContours(frame, [leftEyeHull], -1, (0, 255, 0), 1)
+            cv2.drawContours(frame, [rightEyeHull], -1, (0, 255, 0), 1)
+
+            if ear < THRESHOLD:
+                self.flag += 1
+                if self.flag >= FRAME_CHECK:
+                    cv2.putText(frame, "****************ALERT!****************", (10, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    mixer.music.play()
+            else:
+                self.flag = 0
+
+        return frame
+
+# Streamlit app UI
+st.title("Drowsiness Detection System")
+st.write("This application uses a webcam feed to detect drowsiness using eye aspect ratio.")
+
+# Start video stream
+webrtc_streamer(key="drowsiness-detection", video_processor_factory=DrowsinessDetection)
