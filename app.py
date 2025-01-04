@@ -7,11 +7,15 @@ import requests
 import imutils
 
 # Load YOLOv5 Model
-@st.cache_resource
+@st.cache_resource(show_spinner=True)
 def load_model(path=None):
-    if path:
-        return torch.hub.load('ultralytics/yolov5', 'custom', path=path, force_reload=True)
-    return torch.hub.load('ultralytics/yolov5', 'yolov5s')
+    try:
+        if path:
+            return torch.hub.load('ultralytics/yolov5', 'custom', path=path, force_reload=True)
+        return torch.hub.load('ultralytics/yolov5', 'yolov5s')
+    except Exception as e:
+        st.error(f"Error loading YOLOv5 model: {e}")
+        return None
 
 # Function for Image Detection
 def detect_image(model, image):
@@ -21,12 +25,19 @@ def detect_image(model, image):
 
 # Function for Real-Time Detection
 def real_time_detection(model):
-    st.warning("Press 'q' to exit the live detection.")
+    st.warning("Press the Stop button to exit real-time detection.")
     cap = cv2.VideoCapture(0)
+
+    if not cap.isOpened():
+        st.error("Unable to access the camera. Please check your camera settings.")
+        return
+
+    stop_button = st.button("Stop Detection")
+
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
-            st.error("Unable to access the camera.")
+            st.error("Failed to read from the camera.")
             break
 
         results = model(frame)
@@ -37,13 +48,17 @@ def real_time_detection(model):
 
         # Display frame in Streamlit
         st.image(frame_rgb, channels="RGB", use_column_width=True)
-        if cv2.waitKey(10) & 0xFF == ord('q'):
+
+        if stop_button:
             break
+
     cap.release()
 
 # Function for Android Camera Feed Detection
 def android_feed_detection(model, url):
-    st.warning("Press 'Esc' to exit the Android camera feed detection.")
+    st.warning("Press the Stop button to exit the Android camera feed detection.")
+    stop_button = st.button("Stop Detection")
+
     while True:
         try:
             img_resp = requests.get(url)
@@ -58,10 +73,14 @@ def android_feed_detection(model, url):
 
             # Display image in Streamlit
             st.image(img_rgb, channels="RGB", use_column_width=True)
-            if cv2.waitKey(1) == 27:  # Esc key to exit
+
+            if stop_button:
                 break
+        except requests.exceptions.RequestException as req_e:
+            st.error(f"Network error while fetching Android feed: {req_e}")
+            break
         except Exception as e:
-            st.error(f"Error fetching Android feed: {e}")
+            st.error(f"Error processing Android feed: {e}")
             break
 
 # Streamlit App
@@ -77,6 +96,9 @@ mode = st.sidebar.radio(
 # Load YOLOv5 Model
 model_path = st.sidebar.text_input("Enter Custom Model Path (Optional)", value="")
 model = load_model(model_path if model_path else None)
+
+if not model:
+    st.stop()
 
 # Image Detection
 if mode == "Image Detection":
