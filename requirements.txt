@@ -1,8 +1,8 @@
-streamlit
 opencv-python
 dlib
 imutils
 scipy
 pygame
-
+streamlit
 streamlit-webrtc
+
