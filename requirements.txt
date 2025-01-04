@@ -1,8 +1,9 @@
-opencv-python
-dlib
-imutils
-scipy
-pygame
 streamlit
-streamlit-webrtc
+torch==1.8.1+cu111
+torchvision==0.9.1+cu111
+torchaudio==0.8.1
+opencv-python
+Pillow
+matplotlib
+
 
