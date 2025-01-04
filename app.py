@@ -1,75 +1,58 @@
-import cv2
-import dlib
-import imutils
-from imutils import face_utils
-from scipy.spatial import distance
-from pygame import mixer
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
+import torch
+from matplotlib import pyplot as plt
+import numpy as np
+import cv2
+from PIL import Image
+import io
 
-# Initialize mixer
-mixer.init()
-mixer.music.load("music.wav")
+# Load model
+model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
 
-# Function to calculate Eye Aspect Ratio (EAR)
-def eye_aspect_ratio(eye):
-    A = distance.euclidean(eye[1], eye[5])
-    B = distance.euclidean(eye[2], eye[4])
-    C = distance.euclidean(eye[0], eye[3])
-    ear = (A + B) / (2.0 * C)
-    return ear
+# Function to make detections
+def detect_object(img):
+    results = model(img)
+    return results
 
-# Load the dlib model and facial landmarks predictor
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor("models/shape_predictor_68_face_landmarks.dat")
+# Streamlit UI
+st.title("YOLOv5 Object Detection")
+st.write("Upload an image or use webcam for real-time object detection.")
 
-# Landmark indices for the eyes
-(lStart, lEnd) = face_utils.FACIAL_LANDMARKS_68_IDXS["left_eye"]
-(rStart, rEnd) = face_utils.FACIAL_LANDMARKS_68_IDXS["right_eye"]
+# Upload image
+uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "png", "jpeg"])
 
-# Thresholds
-THRESHOLD = 0.25
-FRAME_CHECK = 20
+if uploaded_file is not None:
+    # Read image
+    img = Image.open(uploaded_file)
+    st.image(img, caption="Uploaded Image.", use_column_width=True)
 
-class DrowsinessDetection(VideoProcessorBase):
-    def __init__(self):
-        self.flag = 0
+    # Convert image to numpy array and make predictions
+    img = np.array(img)
+    results = detect_object(img)
+    
+    # Display results
+    results.print()  # Print results in the Streamlit console
+    st.write("Detection Results")
+    st.image(np.squeeze(results.render()))  # Render detections on the image
+else:
+    st.write("Use webcam for real-time object detection.")
 
-    def recv(self, frame):
-        frame = frame.to_ndarray(format="bgr24")
-        frame = imutils.resize(frame, width=450)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-        subjects = detector(gray, 0)
-        for subject in subjects:
-            shape = predictor(gray, subject)
-            shape = face_utils.shape_to_np(shape)
-
-            leftEye = shape[lStart:lEnd]
-            rightEye = shape[rStart:rEnd]
-            leftEAR = eye_aspect_ratio(leftEye)
-            rightEAR = eye_aspect_ratio(rightEye)
-            ear = (leftEAR + rightEAR) / 2.0
-
-            leftEyeHull = cv2.convexHull(leftEye)
-            rightEyeHull = cv2.convexHull(rightEye)
-            cv2.drawContours(frame, [leftEyeHull], -1, (0, 255, 0), 1)
-            cv2.drawContours(frame, [rightEyeHull], -1, (0, 255, 0), 1)
-
-            if ear < THRESHOLD:
-                self.flag += 1
-                if self.flag >= FRAME_CHECK:
-                    cv2.putText(frame, "****************ALERT!****************", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                    mixer.music.play()
-            else:
-                self.flag = 0
-
-        return frame
-
-# Streamlit app UI
-st.title("Drowsiness Detection System")
-st.write("This application uses a webcam feed to detect drowsiness using eye aspect ratio.")
-
-# Start video stream
-webrtc_streamer(key="drowsiness-detection", video_processor_factory=DrowsinessDetection)
+# Real-time webcam detection
+if st.button("Start Webcam"):
+    cap = cv2.VideoCapture(0)
+    
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # Make detections
+        results = detect_object(frame)
+        
+        # Display frame with detection
+        cv2.imshow('YOLOv5', np.squeeze(results.render()))
+        
+        if cv2.waitKey(10) & 0xFF == ord('q'):
+            break
+    cap.release()
+    cv2.destroyAllWindows()
