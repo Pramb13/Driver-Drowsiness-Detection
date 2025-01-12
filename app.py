@@ -1,73 +1,105 @@
 import streamlit as st
-import torch
-import numpy as np
-from PIL import Image
 import cv2
+import torch
+import dlib
+from imutils import face_utils
+import numpy as np
+import time
+from scipy.spatial import distance as dist
 
-# Load YOLOv5 model
-@st.cache_resource
-def load_model():
-    return torch.hub.load('ultralytics/yolov5', 'yolov5s')  # Replace 'yolov5s' with custom weights if available
+# Load the YOLOv5 model
+model = torch.hub.load('ultralytics/yolov5', 'yolov5s')  # Load YOLOv5 small model
 
-model = load_model()
+# Load dlib face detector and landmark predictor
+predictor_path = 'shape_predictor_68_face_landmarks.dat'  # Make sure to download this file from dlib
+try:
+    predictor = dlib.shape_predictor(predictor_path)
+except RuntimeError as e:
+    st.error(f"Error loading shape predictor: {e}")
+    st.stop()
 
-def detect_objects(frame):
-    """
-    Perform object detection on a video frame using YOLOv5.
-    """
-    results = model(frame)
-    labels, cords = results.xyxyn[0][:, -1], results.xyxyn[0][:, :-1]
-    return labels, cords
+detector = dlib.get_frontal_face_detector()
 
-def draw_boxes(frame, labels, cords, confidence_threshold=0.3):
-    """
-    Draw bounding boxes on the frame for detected objects.
-    """
-    for label, cord in zip(labels, cords):
-        if cord[4] < confidence_threshold:  # Filter out low-confidence detections
-            continue
-        x1, y1, x2, y2 = int(cord[0] * frame.shape[1]), int(cord[1] * frame.shape[0]), \
-                         int(cord[2] * frame.shape[1]), int(cord[3] * frame.shape[0])
-        conf = cord[4]
-        class_name = model.names[int(label)]
-        label_text = f"{class_name} {conf:.2f}"
-        # Draw bounding box
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        # Put label
-        cv2.putText(frame, label_text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-    return frame
+# Define EAR threshold and counters for drowsiness detection
+EAR_THRESHOLD = 0.2
+blink_counter = 0
+drowsiness_counter = 0
 
-def main():
-    st.title("Driver Drowsiness Detection System")
-    st.markdown(
-        """
-        This application uses YOLOv5 to detect driver drowsiness and related conditions.
-        - Start the webcam feed to analyze video frames in real-time.
-        - Close the detection checkbox to stop the webcam.
-        """
-    )
+# Eye Aspect Ratio (EAR) calculation function
+def eye_aspect_ratio(eye):
+    A = dist.euclidean(eye[1], eye[5])
+    B = dist.euclidean(eye[2], eye[4])
+    C = dist.euclidean(eye[0], eye[3])
+    ear = (A + B) / (2.0 * C)
+    return ear
 
-    # Checkbox to start/stop detection
-    run_detection = st.checkbox("Start Detection")
+# Function to process webcam input
+def process_video(video):
+    global blink_counter, drowsiness_counter
+    cap = cv2.VideoCapture(video)
 
-    if run_detection:
-        # Start webcam feed with Streamlit's camera input
-        video_file = st.camera_input("Capture Video")
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            st.error("Failed to capture video frame")
+            break
 
-        if video_file is not None:
-            # Load the video file and process frame-by-frame
-            video_bytes = video_file.read()
-            # Decode the video frame
-            video_array = np.frombuffer(video_bytes, np.uint8)
-            frame = cv2.imdecode(video_array, cv2.IMREAD_COLOR)
+        # Convert frame to grayscale for dlib
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-            if frame is not None:
-                # YOLOv5 detection
-                labels, cords = detect_objects(frame)
-                frame = draw_boxes(frame, labels, cords)
+        # Detect faces in the frame using dlib
+        faces = detector(gray)
 
-                # Display the frame in Streamlit
-                st.image(frame, channels="BGR", use_column_width=True)
+        for face in faces:
+            # Get the landmarks for the face
+            shape = predictor(gray, face)
+            shape = face_utils.shape_to_np(shape)
 
-if __name__ == "__main__":
-    main()
+            # Get the coordinates for the left and right eyes
+            left_eye = shape[42:48]
+            right_eye = shape[36:42]
+
+            # Calculate EAR for both eyes
+            left_ear = eye_aspect_ratio(left_eye)
+            right_ear = eye_aspect_ratio(right_eye)
+            ear = (left_ear + right_ear) / 2.0
+
+            # If EAR is below the threshold, increase blink_counter
+            if ear < EAR_THRESHOLD:
+                blink_counter += 1
+            else:
+                # If eyes are open, reset blink_counter
+                if blink_counter > 0:
+                    drowsiness_counter += 1  # Increase drowsiness counter
+                    blink_counter = 0  # Reset blink counter
+
+            # Display EAR on the frame
+            cv2.putText(frame, f"EAR: {ear:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+            # If drowsiness counter reaches threshold, display alert
+            if drowsiness_counter > 10:
+                cv2.putText(frame, "DROWSINESS ALERT!", (200, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 2)
+
+            # Draw bounding boxes around the eyes
+            cv2.drawContours(frame, [left_eye], -1, (0, 255, 0), 1)
+            cv2.drawContours(frame, [right_eye], -1, (0, 255, 0), 1)
+
+        # Perform YOLOv5 detection on the frame (for visualization of face and objects)
+        results = model(frame)
+        results.render()  # Render the detection boxes on the frame
+
+        # Show the processed frame in Streamlit
+        st.image(frame, channels="BGR", caption="Drowsiness Detection", use_column_width=True)
+
+        time.sleep(0.1)  # Add a small delay to control frame rate
+
+# Create Streamlit Interface
+st.title("Driver Drowsiness Detection")
+
+# Webcam input for video stream
+video = st.camera_input("Capture Video")
+
+if video is not None:
+    process_video(video)
+else:
+    st.write("Please allow access to the camera.")
