@@ -52,19 +52,22 @@ def main():
 
     if run_detection:
         # Start webcam feed with Streamlit's camera input
-        frame = st.camera_input("Capture Image")
-        
-        if frame is not None:
-            # Convert the uploaded image to a numpy array
-            img = Image.open(frame)
-            img = np.array(img)
-            
-            # YOLOv5 detection
-            labels, cords = detect_objects(img)
-            img = draw_boxes(img, labels, cords)
+        video_file = st.camera_input("Capture Video")
 
-            # Display the frame in Streamlit
-            st.image(img, channels="BGR", use_column_width=True)
+        if video_file is not None:
+            # Load the video file and process frame-by-frame
+            video_bytes = video_file.read()
+            # Decode the video frame
+            video_array = np.frombuffer(video_bytes, np.uint8)
+            frame = cv2.imdecode(video_array, cv2.IMREAD_COLOR)
+
+            if frame is not None:
+                # YOLOv5 detection
+                labels, cords = detect_objects(frame)
+                frame = draw_boxes(frame, labels, cords)
+
+                # Display the frame in Streamlit
+                st.image(frame, channels="BGR", use_column_width=True)
 
 if __name__ == "__main__":
     main()
