@@ -1,10 +1,10 @@
 import streamlit as st
-import cv2
 import torch
-from PIL import Image
 import numpy as np
+from PIL import Image
+import cv2
 
-# Load YOLOv5 model (pre-trained or custom)
+# Load YOLOv5 model
 @st.cache_resource
 def load_model():
     return torch.hub.load('ultralytics/yolov5', 'yolov5s')  # Replace 'yolov5s' with custom weights if available
@@ -51,24 +51,20 @@ def main():
     run_detection = st.checkbox("Start Detection")
 
     if run_detection:
-        # Start webcam feed
-        cap = cv2.VideoCapture(0)  # Open webcam
-        stframe = st.empty()  # Placeholder for video frames
-
-        while run_detection:
-            ret, frame = cap.read()
-            if not ret:
-                st.error("Unable to access webcam. Please check your camera.")
-                break
-
+        # Start webcam feed with Streamlit's camera input
+        frame = st.camera_input("Capture Image")
+        
+        if frame is not None:
+            # Convert the uploaded image to a numpy array
+            img = Image.open(frame)
+            img = np.array(img)
+            
             # YOLOv5 detection
-            labels, cords = detect_objects(frame)
-            frame = draw_boxes(frame, labels, cords)
+            labels, cords = detect_objects(img)
+            img = draw_boxes(img, labels, cords)
 
             # Display the frame in Streamlit
-            stframe.image(frame, channels="BGR", use_column_width=True)
-
-        cap.release()
+            st.image(img, channels="BGR", use_column_width=True)
 
 if __name__ == "__main__":
-    main() 
+    main()
