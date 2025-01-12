@@ -1,10 +1,10 @@
 import streamlit as st
-import cv2
 import torch
-from PIL import Image
 import numpy as np
+from PIL import Image
+import cv2
 
-# Load YOLOv5 model (pre-trained or custom)
+# Load YOLOv5 model
 @st.cache_resource
 def load_model():
     return torch.hub.load('ultralytics/yolov5', 'yolov5s')  # Replace 'yolov5s' with custom weights if available
@@ -15,8 +15,8 @@ def detect_objects(frame):
     """
     Perform object detection on a video frame using YOLOv5.
     """
-    results = model(frame)  # Run inference with YOLOv5 model
-    labels, cords = results.xyxyn[0][:, -1], results.xyxyn[0][:, :-1]  # Get labels and coordinates
+    results = model(frame)
+    labels, cords = results.xyxyn[0][:, -1], results.xyxyn[0][:, :-1]
     return labels, cords
 
 def draw_boxes(frame, labels, cords, confidence_threshold=0.3):
@@ -29,11 +29,11 @@ def draw_boxes(frame, labels, cords, confidence_threshold=0.3):
         x1, y1, x2, y2 = int(cord[0] * frame.shape[1]), int(cord[1] * frame.shape[0]), \
                          int(cord[2] * frame.shape[1]), int(cord[3] * frame.shape[0])
         conf = cord[4]
-        class_name = model.names[int(label)]  # Get object name
-        label_text = f"{class_name} {conf:.2f}"  # Prepare label text
+        class_name = model.names[int(label)]
+        label_text = f"{class_name} {conf:.2f}"
         # Draw bounding box
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        # Put label text
+        # Put label
         cv2.putText(frame, label_text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
     return frame
 
@@ -51,31 +51,20 @@ def main():
     run_detection = st.checkbox("Start Detection")
 
     if run_detection:
-        # Start webcam feed
-        cap = cv2.VideoCapture(0)  # Open webcam
-        if not cap.isOpened():  # Check if webcam is successfully opened
-            st.error("Unable to access webcam. Please check your camera.")
-            return  # Exit if webcam isn't accessible
-
-        stframe = st.empty()  # Placeholder for video frames
-
-        while run_detection:
-            ret, frame = cap.read()
-            if not ret:
-                st.error("Unable to read from webcam. Please check your camera.")
-                break
-
+        # Start webcam feed with Streamlit's camera input
+        frame = st.camera_input("Capture Image")
+        
+        if frame is not None:
+            # Convert the uploaded image to a numpy array
+            img = Image.open(frame)
+            img = np.array(img)
+            
             # YOLOv5 detection
-            labels, cords = detect_objects(frame)
-            frame = draw_boxes(frame, labels, cords)
+            labels, cords = detect_objects(img)
+            img = draw_boxes(img, labels, cords)
 
             # Display the frame in Streamlit
-            stframe.image(frame, channels="BGR", use_column_width=True)
-
-        cap.release()  # Release webcam when done
-
-    else:
-        st.write("Webcam feed is paused. Please click 'Start Detection' to begin.")
+            st.image(img, channels="BGR", use_column_width=True)
 
 if __name__ == "__main__":
     main()
