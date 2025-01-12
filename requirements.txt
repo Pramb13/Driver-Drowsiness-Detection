@@ -1,7 +1,9 @@
 streamlit
+torch
+torchvision
 opencv-python-headless
-keras
-tensorflow
-pygame
 numpy
-streamlit-webrtc
+pillow
+pyyaml
+matplotlib
+ultralytics
