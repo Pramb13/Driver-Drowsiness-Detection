@@ -1,87 +1,74 @@
-import cv2
-import os
-from keras.models import load_model
-import numpy as np
-from pygame import mixer
 import streamlit as st
-from streamlit_webrtc import VideoTransformerBase, webrtc_streamer
+import cv2
+import torch
+from PIL import Image
+import numpy as np
 
-# Initialize mixer
-mixer.init()
-sound = mixer.Sound('alarm.wav')
+# Load YOLOv5 model (pre-trained or custom)
+@st.cache_resource
+def load_model():
+    return torch.hub.load('ultralytics/yolov5', 'yolov5s')  # Replace 'yolov5s' with custom weights if available
 
-# Load models and cascades
-face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_alt.xml')
-leye_cascade = cv2.CascadeClassifier('haarcascade_lefteye_2splits.xml')
-reye_cascade = cv2.CascadeClassifier('haarcascade_righteye_2splits.xml')
+model = load_model()
 
-model = load_model('dl_model/drowsiness_cnn.h5')
+def detect_objects(frame):
+    """
+    Perform object detection on a video frame using YOLOv5.
+    """
+    results = model(frame)
+    labels, cords = results.xyxyn[0][:, -1], results.xyxyn[0][:, :-1]
+    return labels, cords
 
-class DrowsinessDetector(VideoTransformerBase):
-    def __init__(self):
-        self.score = 0
-        self.thicc = 2
+def draw_boxes(frame, labels, cords, confidence_threshold=0.3):
+    """
+    Draw bounding boxes on the frame for detected objects.
+    """
+    for label, cord in zip(labels, cords):
+        if cord[4] < confidence_threshold:  # Filter out low-confidence detections
+            continue
+        x1, y1, x2, y2 = int(cord[0] * frame.shape[1]), int(cord[1] * frame.shape[0]), \
+                         int(cord[2] * frame.shape[1]), int(cord[3] * frame.shape[0])
+        conf = cord[4]
+        class_name = model.names[int(label)]
+        label_text = f"{class_name} {conf:.2f}"
+        # Draw bounding box
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        # Put label
+        cv2.putText(frame, label_text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+    return frame
 
-    def transform(self, frame):
-        frame = frame.to_ndarray(format="bgr24")
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, minNeighbors=5, scaleFactor=1.1, minSize=(25, 25))
-        left_eye = leye_cascade.detectMultiScale(gray)
-        right_eye = reye_cascade.detectMultiScale(gray)
+def main():
+    st.title("Driver Drowsiness Detection System")
+    st.markdown(
+        """
+        This application uses YOLOv5 to detect driver drowsiness and related conditions.
+        - Start the webcam feed to analyze video frames in real-time.
+        - Close the detection checkbox to stop the webcam.
+        """
+    )
 
-        for (x, y, w, h) in faces:
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (100, 100, 100), 1)
+    # Checkbox to start/stop detection
+    run_detection = st.checkbox("Start Detection")
 
-        lbl = ''
-        rpred = [99]
-        lpred = [99]
+    if run_detection:
+        # Start webcam feed
+        cap = cv2.VideoCapture(0)  # Open webcam
+        stframe = st.empty()  # Placeholder for video frames
 
-        for (x, y, w, h) in right_eye:
-            r_eye = frame[y:y + h, x:x + w]
-            r_eye = cv2.cvtColor(r_eye, cv2.COLOR_BGR2RGB)
-            r_eye = cv2.resize(r_eye, (32, 32))
-            r_eye = r_eye.reshape((-1, 32, 32, 3))
-            rpred = np.argmax(model.predict(r_eye), axis=-1)
-            lbl = 'Open' if rpred[0] == 1 else 'Closed'
-            break
+        while run_detection:
+            ret, frame = cap.read()
+            if not ret:
+                st.error("Unable to access webcam. Please check your camera.")
+                break
 
-        for (x, y, w, h) in left_eye:
-            l_eye = frame[y:y + h, x:x + w]
-            l_eye = cv2.cvtColor(l_eye, cv2.COLOR_BGR2RGB)
-            l_eye = cv2.resize(l_eye, (32, 32))
-            l_eye = l_eye.reshape((-1, 32, 32, 3))
-            lpred = np.argmax(model.predict(l_eye), axis=-1)
-            lbl = 'Open' if lpred[0] == 1 else 'Closed'
-            break
+            # YOLOv5 detection
+            labels, cords = detect_objects(frame)
+            frame = draw_boxes(frame, labels, cords)
 
-        if rpred[0] == 0 and lpred[0] == 0:
-            self.score += 1
-            cv2.putText(frame, "Closed", (10, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        else:
-            self.score -= 1
-            cv2.putText(frame, "Open", (10, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            # Display the frame in Streamlit
+            stframe.image(frame, channels="BGR", use_column_width=True)
 
-        if self.score < 0:
-            self.score = 0
+        cap.release()
 
-        cv2.putText(frame, f'Score: {self.score}', (100, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-
-        if self.score > 12:
-            try:
-                sound.play()
-            except:
-                pass
-            self.thicc = min(16, self.thicc + 2)
-            cv2.rectangle(frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), self.thicc)
-        else:
-            self.thicc = max(2, self.thicc - 2)
-
-        return frame
-
-# Streamlit interface
-st.title("Drowsiness Detection System")
-st.write("This application uses your webcam to detect drowsiness and alerts you if you seem sleepy.")
-
-webrtc_streamer(key="drowsiness", video_transformer_factory=DrowsinessDetector, rtc_configuration={
-    "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-})
+if __name__ == "__main__":
+    main()
