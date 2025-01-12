@@ -1,9 +1,5 @@
 streamlit
 torch
-torchvision
 opencv-python
 numpy
-pillow
-pyyaml
-matplotlib
-ultralytics
+Pillow
