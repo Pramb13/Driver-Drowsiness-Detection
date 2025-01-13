@@ -1,6 +1,5 @@
 streamlit
-opencv-python-headless==4.5.3.56
-torch==1.10.0
-dlib==19.22.99
-imutils
-scipy
+opencv-python-headless
+torch
+torchvision
+ultralytics
