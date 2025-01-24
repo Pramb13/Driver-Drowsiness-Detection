@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 import tempfile
 import time
+import ultralytics
 
 # Load YOLOv5 model
 @st.cache_resource
