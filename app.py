@@ -14,7 +14,7 @@ mp_drawing = mp.solutions.drawing_utils
 def is_eye_closed(eye_points, landmarks):
     # Calculate Eye Aspect Ratio (EAR)
     eye_aspect_ratio = (abs(landmarks[eye_points[1]].y - landmarks[eye_points[5]].y) + 
-                        abs(landmarks[eye_points[2]].y - landmarks[eye_points[4]].y)) / (2.0 * abs(landmarks[eye_points[0]].x - landmarks[eye_points[3]].x)))
+                        abs(landmarks[eye_points[2]].y - landmarks[eye_points[4]].y)) / (2.0 * abs(landmarks[eye_points[0]].x - landmarks[eye_points[3]].x))
     return eye_aspect_ratio < 0.2  # Threshold for closed eyes (you can tune this value)
 
 # Streamlit app interface
