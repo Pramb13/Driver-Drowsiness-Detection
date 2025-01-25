@@ -6,7 +6,7 @@ import imageio
 from PIL import Image
 import tempfile
 import cv2
-import dlib  # For facial landmarks detection
+import mediapipe as mp  # For facial landmark detection
 
 # Load YOLOv5 model
 @st.cache_resource
@@ -16,9 +16,11 @@ def load_model():
 
 model = load_model()
 
-# Load Dlib facial landmark predictor
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')  # Download from Dlib
+# Initialize MediaPipe Face Detection and Landmark Models
+mp_face_detection = mp.solutions.face_detection
+mp_face_mesh = mp.solutions.face_mesh
+face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.2)
+face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.2, min_tracking_confidence=0.5)
 
 # Function to calculate Eye Aspect Ratio (EAR)
 def eye_aspect_ratio(eye):
@@ -64,33 +66,43 @@ if camera_input:
         # Convert the rendered image back to RGB for Streamlit display
         rendered_frame = np.array(results.ims[0])
 
-        # Convert the frame to grayscale for face and eye detection
-        gray_frame = cv2.cvtColor(rendered_frame, cv2.COLOR_RGB2GRAY)
+        # Convert the frame to RGB for MediaPipe
+        rgb_frame = cv2.cvtColor(rendered_frame, cv2.COLOR_BGR2RGB)
 
-        # Detect faces in the frame
-        faces = detector(gray_frame)
+        # Detect faces using MediaPipe
+        results_face_detection = face_detection.process(rgb_frame)
+        
+        if results_face_detection.detections:
+            # Use MediaPipe Face Mesh for landmark detection
+            results_face_mesh = face_mesh.process(rgb_frame)
+            
+            if results_face_mesh.multi_face_landmarks:
+                for face_landmarks in results_face_mesh.multi_face_landmarks:
+                    # Get the coordinates of the left and right eyes (indices 33-133 for left eye, 362-463 for right eye)
+                    left_eye = []
+                    right_eye = []
 
-        for face in faces:
-            # Get facial landmarks
-            landmarks = predictor(gray_frame, face)
+                    for i in range(33, 133):  # Left eye landmarks
+                        left_eye.append([face_landmarks.landmark[i].x, face_landmarks.landmark[i].y])
+                    for i in range(362, 463):  # Right eye landmarks
+                        right_eye.append([face_landmarks.landmark[i].x, face_landmarks.landmark[i].y])
 
-            # Get the coordinates of the left and right eyes (indices 36-41 and 42-47)
-            left_eye = np.array([(landmarks.part(i).x, landmarks.part(i).y) for i in range(36, 42)])
-            right_eye = np.array([(landmarks.part(i).x, landmarks.part(i).y) for i in range(42, 48)])
+                    left_eye = np.array(left_eye)
+                    right_eye = np.array(right_eye)
 
-            # Calculate the EAR for both eyes
-            left_ear = eye_aspect_ratio(left_eye)
-            right_ear = eye_aspect_ratio(right_eye)
-            ear = (left_ear + right_ear) / 2.0
+                    # Calculate the EAR for both eyes
+                    left_ear = eye_aspect_ratio(left_eye)
+                    right_ear = eye_aspect_ratio(right_eye)
+                    ear = (left_ear + right_ear) / 2.0
 
-            # Check if the EAR is below the threshold (indicating drowsiness)
-            if ear < EAR_THRESHOLD:
-                frame_counter += 1
-                if frame_counter >= CONSEC_FRAMES:
-                    # Driver is drowsy
-                    cv2.putText(rendered_frame, "Drowsy Detected!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            else:
-                frame_counter = 0
+                    # Check if the EAR is below the threshold (indicating drowsiness)
+                    if ear < EAR_THRESHOLD:
+                        frame_counter += 1
+                        if frame_counter >= CONSEC_FRAMES:
+                            # Driver is drowsy
+                            cv2.putText(rendered_frame, "Drowsy Detected!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    else:
+                        frame_counter = 0
 
         # Display the rendered frame with drowsiness detection
         stframe.image(rendered_frame, caption="Detected Frame", use_column_width=True)
