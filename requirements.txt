@@ -1,5 +1,5 @@
 opencv-python
-dlib
+https://github.com/davisking/dlib/releases/download/v19.24/dlib-19.24.0-cp38-cp38-manylinux1_x86_64.whl
 streamlit
 imutils
 scipy
