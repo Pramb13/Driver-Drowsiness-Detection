@@ -2,8 +2,7 @@ import cv2
 import streamlit as st
 import mediapipe as mp
 import time
-from imutils.video import VideoStream
-import imutils
+import numpy as np
 
 # Initialize mediapipe face detection and landmarks model
 mp_face_detection = mp.solutions.face_detection
@@ -21,35 +20,30 @@ def is_eye_closed(eye_points, landmarks):
 st.title("Driver Drowsiness Detection")
 st.write("This app detects the driver's drowsiness by checking their eye status in real time.")
 
-# Capture video
+# Capture video (using webcam)
 stframe = st.empty()
 
-# Try initializing video stream and handling errors
-try:
-    video_stream = VideoStream(src=0).start()
-    time.sleep(2)  # Give time for camera to initialize
-except Exception as e:
-    st.write(f"Failed to capture frame. Error: {e}")
-    video_stream = None
+# Initialize webcam (0 is default camera)
+video_stream = cv2.VideoCapture(0)
 
-# Check if the video stream is successfully started
-if video_stream is not None:
+if not video_stream.isOpened():
+    st.write("Error: Camera not found or is being used by another application.")
+else:
     # Initialize mediapipe face mesh
     with mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5) as face_mesh:
         while True:
-            # Capture the frame from the video stream
-            frame = video_stream.read()
+            ret, frame = video_stream.read()
 
             # Ensure the frame is valid
-            if frame is None:
+            if not ret:
                 st.write("Failed to capture frame. Please check your camera.")
                 break
 
-            frame = imutils.resize(frame, width=640)  # Resize the frame to 640px width
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert to RGB (required by mediapipe)
-
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert to RGB (required by mediapipe)
+            frame = cv2.flip(frame, 1)  # Flip the frame horizontally (for mirror view)
+            
             # Process the image and find face landmarks
-            result = face_mesh.process(rgb_frame)
+            result = face_mesh.process(frame)
 
             if result.multi_face_landmarks:
                 for face_landmarks in result.multi_face_landmarks:
@@ -71,9 +65,10 @@ if video_stream is not None:
                         cv2.putText(frame, "AWAKE", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
             # Display the frame in Streamlit
-            stframe.image(frame, channels="BGR", use_column_width=True)
+            stframe.image(frame, channels="RGB", use_column_width=True)
 
             # Add a small delay to prevent high CPU usage
             time.sleep(0.1)
-else:
-    st.write("Failed to initialize video stream. Please check your camera.")
+
+# Release video stream when done
+video_stream.release()
