@@ -10,9 +10,8 @@ import tempfile
 # Load YOLOv5 model using the ultralytics package
 from ultralytics import YOLO
 
-@st.cache_resource
 def load_model():
-    return YOLO('best.pt')  # Replace 'best.pt' with your trained model file path
+    return YOLO('best.pt')  # Replace with actual model path
 
 model = load_model()
 
