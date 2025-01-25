@@ -1,80 +1,49 @@
-import cv2
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 import mediapipe as mp
-import time
 import numpy as np
+import cv2
 
-# Initialize mediapipe face detection and landmarks model
-mp_face_detection = mp.solutions.face_detection
+# Initialize MediaPipe for face detection and face mesh
 mp_face_mesh = mp.solutions.face_mesh
 mp_drawing = mp.solutions.drawing_utils
 
-# Function to check if eyes are closed
+# Function to check if eyes are closed using Eye Aspect Ratio (EAR)
 def is_eye_closed(eye_points, landmarks):
-    # Calculate Eye Aspect Ratio (EAR)
-    eye_aspect_ratio = (abs(landmarks[eye_points[1]].y - landmarks[eye_points[5]].y) + 
-                        abs(landmarks[eye_points[2]].y - landmarks[eye_points[4]].y)) / (2.0 * abs(landmarks[eye_points[0]].x - landmarks[eye_points[3]].x))
-    return eye_aspect_ratio < 0.2  # Threshold for closed eyes (you can tune this value)
+    ear = (abs(landmarks[eye_points[1]].y - landmarks[eye_points[5]].y) + 
+           abs(landmarks[eye_points[2]].y - landmarks[eye_points[4]].y)) / (2.0 * abs(landmarks[eye_points[0]].x - landmarks[eye_points[3]].x))
+    return ear < 0.2
 
-# Streamlit app interface
-st.title("Driver Drowsiness Detection")
-st.write("This app detects the driver's drowsiness by checking their eye status in real time.")
+# Define the video transformer for processing frames
+class VideoTransformer(VideoTransformerBase):
+    def __init__(self):
+        self.face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-# Capture video (using webcam)
-stframe = st.empty()
+    def transform(self, frame):
+        # Convert frame to RGB (required by MediaPipe)
+        img = frame.to_rgb()
+        
+        # Process the frame for face landmarks
+        results = self.face_mesh.process(img)
+        
+        if results.multi_face_landmarks:
+            for landmarks in results.multi_face_landmarks:
+                # Draw landmarks
+                mp_drawing.draw_landmarks(image=img, landmark_list=landmarks, connections=mp_face_mesh.FACEMESH_TESSELATION)
+                
+                # Check if eyes are closed
+                left_eye = [33, 160, 158, 133, 153, 144]
+                right_eye = [362, 385, 387, 263, 373, 380]
+                left_eye_closed = is_eye_closed(left_eye, landmarks.landmark)
+                right_eye_closed = is_eye_closed(right_eye, landmarks.landmark)
+                
+                # Show drowsiness status on the frame
+                if left_eye_closed and right_eye_closed:
+                    cv2.putText(img, "DROWSY!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                else:
+                    cv2.putText(img, "AWAKE", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-# Initialize webcam (0 is default camera)
-video_stream = cv2.VideoCapture(0)
+        return img
 
-if not video_stream.isOpened():
-    st.write("Error: Camera not found or is being used by another application.")
-else:
-    # Initialize mediapipe face mesh
-    with mp_face_mesh.FaceMesh(min_detection_confidence=0.3, min_tracking_confidence=0.3) as face_mesh:
-        while True:
-            ret, frame = video_stream.read()
-
-            # Ensure the frame is valid
-            if not ret:
-                st.write("Failed to capture frame. Please check your camera.")
-                break
-
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert to RGB (required by mediapipe)
-            frame = cv2.flip(frame, 1)  # Flip the frame horizontally (for mirror view)
-
-            # Resize frame for better processing
-            frame = cv2.resize(frame, (640, 480))
-
-            # Process the image and find face landmarks
-            result = face_mesh.process(frame)
-
-            if result.multi_face_landmarks:
-                for face_landmarks in result.multi_face_landmarks:
-                    # Draw face landmarks on the frame
-                    mp_drawing.draw_landmarks(image=frame, landmark_list=face_landmarks, connections=mp_face_mesh.FACEMESH_TESSELATION)
-
-                    # Eye region points (for left and right eyes)
-                    left_eye = [33, 160, 158, 133, 153, 144]
-                    right_eye = [362, 385, 387, 263, 373, 380]
-
-                    # Check if eyes are closed using the eye aspect ratio
-                    left_eye_closed = is_eye_closed(left_eye, face_landmarks.landmark)
-                    right_eye_closed = is_eye_closed(right_eye, face_landmarks.landmark)
-
-                    # Show alert if eyes are closed (drowsy), otherwise show awake
-                    if left_eye_closed and right_eye_closed:
-                        cv2.putText(frame, "DROWSY!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                    else:
-                        cv2.putText(frame, "AWAKE", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-            else:
-                st.write("No face landmarks detected.")
-
-            # Display the frame in Streamlit
-            stframe.image(frame, channels="RGB", use_column_width=True)
-
-            # Add a small delay to prevent high CPU usage
-            time.sleep(0.1)
-
-# Release video stream when done
-video_stream.release()
+# Set up the WebRTC streamer
+webrtc_streamer(key="driver-drowsiness", video_transformer_factory=VideoTransformer)
