@@ -10,6 +10,7 @@ import tempfile
 # Load YOLOv5 model using the ultralytics package
 from ultralytics import YOLO
 
+@st.cache_resource
 def load_model():
     return YOLO('best.pt')  # Replace with actual model path
 
@@ -31,19 +32,25 @@ EAR_THRESHOLD = 0.25
 st.title("Driver Drowsiness Detection")
 st.write("Detects drowsiness using YOLOv5 and Mediapipe.")
 
-# Camera or image input
-camera_input = st.camera_input("Take a picture or upload a frame")
+# Streamlit Camera Input
+camera_input = st.camera_input("Start your camera to begin detection.")
 
 if camera_input:
-    # Process the input image
+    st.markdown("### Live Detection Output")
+    stframe = st.empty()  # Placeholder for live video feed
+    
+    # Capture and process video stream
+    video_bytes = camera_input.getvalue()
+    
+    # Save the image temporarily to process each frame
     with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-        temp_file.write(camera_input.getvalue())
+        temp_file.write(video_bytes)
         temp_image_path = temp_file.name
 
-    # Read and preprocess image
+    # Open and process the video stream
     image = cv2.imread(temp_image_path)
     rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
+    
     # YOLOv5 detection
     results = model(rgb_image)
     results.render()  # Render detections
@@ -81,4 +88,4 @@ if camera_input:
                     cv2.putText(rgb_image, "Drowsy Detected!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
     # Display the processed frame
-    st.image(rendered_image, caption="Processed Frame", use_column_width=True)
+    stframe.image(rendered_image, caption="Processed Frame", use_column_width=True)
