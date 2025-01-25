@@ -1,9 +1,5 @@
-ultralytics
 streamlit
 torch
 torchvision
-opencv-python-headless==4.8.0.76
-numpy
-Pillow
+opencv-python-headless
 mediapipe
-imageio
