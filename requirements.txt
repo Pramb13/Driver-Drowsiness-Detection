@@ -1,7 +1,5 @@
+opencv-python
+dlib
 streamlit
-torch
-torchvision
-opencv-python-headless
-mediapipe
-ultralytics
-imageio
+imutils
+scipy
