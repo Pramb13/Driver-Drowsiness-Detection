@@ -1,58 +1,59 @@
 import cv2
-import dlib
 import streamlit as st
-from imutils import face_utils
-from scipy.spatial import distance
+import mediapipe as mp
+import time
+from imutils.video import VideoStream
+import imutils
 
-# Load dlib's pre-trained face detector and facial landmarks predictor
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
+# Initialize mediapipe face detection and landmarks model
+mp_face_detection = mp.solutions.face_detection
+mp_face_mesh = mp.solutions.face_mesh
+mp_drawing = mp.solutions.drawing_utils
 
-# Eye Aspect Ratio (EAR) calculation
-def ear(eye):
-    A = distance.euclidean(eye[1], eye[5])
-    B = distance.euclidean(eye[2], eye[4])
-    C = distance.euclidean(eye[0], eye[3])
-    return (A + B) / (2.0 * C)
+# Function to check if eyes are closed
+def is_eye_closed(eye_points, landmarks):
+    eye_aspect_ratio = (abs(landmarks[eye_points[1]].y - landmarks[eye_points[5]].y) + 
+                        abs(landmarks[eye_points[2]].y - landmarks[eye_points[4]].y])) / (2.0 * abs(landmarks[eye_points[0]].x - landmarks[eye_points[3]].x))
+    return eye_aspect_ratio < 0.2  # Threshold for closed eyes (you can tune this value)
 
-# Setup for Streamlit
-st.title("Driver Drowsiness Detection System")
+# Streamlit app interface
+st.title("Driver Drowsiness Detection")
+st.write("This app detects the driver's drowsiness by checking their eye status in real time.")
 
-# Set up video capture
-cap = cv2.VideoCapture(0)
+# Capture video
+stframe = st.empty()
+video_stream = VideoStream(src=0).start()
 
-stframe = st.empty()  # This will hold our live stream
+# Initialize mediapipe face mesh
+with mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5) as face_mesh:
+    while True:
+        frame = video_stream.read()
+        frame = imutils.resize(frame, width=640)
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Process the image and find face landmarks
+        result = face_mesh.process(rgb_frame)
+        
+        if result.multi_face_landmarks:
+            for face_landmarks in result.multi_face_landmarks:
+                # Draw face landmarks
+                mp_drawing.draw_landmarks(image=frame, landmark_list=face_landmarks, connections=mp_face_mesh.FACEMESH_TESSELATION)
+                
+                # Eye region points (left and right eyes)
+                left_eye = [33, 160, 158, 133, 153, 144]
+                right_eye = [362, 385, 387, 263, 373, 380]
+                
+                # Check if eyes are closed
+                left_eye_closed = is_eye_closed(left_eye, face_landmarks.landmark)
+                right_eye_closed = is_eye_closed(right_eye, face_landmarks.landmark)
+                
+                if left_eye_closed and right_eye_closed:
+                    cv2.putText(frame, "DROWSY!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                else:
+                    cv2.putText(frame, "AWAKE", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        
+        # Display the frame
+        stframe.image(frame, channels="BGR", use_column_width=True)
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-    
-    # Convert to grayscale for detection
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    # Detect faces
-    faces = detector(gray)
-    
-    for face in faces:
-        landmarks = predictor(gray, face)
-        landmarks = face_utils.shape_to_np(landmarks)
-
-        # Get the coordinates of the left and right eyes
-        left_eye = landmarks[42:48]
-        right_eye = landmarks[36:42]
-
-        # Calculate EAR for both eyes
-        left_ear = ear(left_eye)
-        right_ear = ear(right_eye)
-
-        # Average EAR to determine drowsiness
-        ear_avg = (left_ear + right_ear) / 2.0
-
-        if ear_avg < 0.25:
-            cv2.putText(frame, "Drowsy!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
-    # Show the frame in the Streamlit app
-    stframe.image(frame, channels="BGR", use_column_width=True)
-
-cap.release()
+        # Add a small delay
+        time.sleep(0.1)
