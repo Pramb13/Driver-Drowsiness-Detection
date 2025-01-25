@@ -30,6 +30,12 @@ with mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence
     while True:
         # Capture the frame from the video stream
         frame = video_stream.read()
+        
+        # Ensure the frame is valid
+        if frame is None:
+            st.write("Failed to capture frame. Please check your camera.")
+            break
+        
         frame = imutils.resize(frame, width=640)  # Resize the frame to 640px width
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert to RGB (required by mediapipe)
         
