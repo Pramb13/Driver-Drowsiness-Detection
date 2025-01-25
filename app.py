@@ -1,15 +1,18 @@
 import streamlit as st
 import torch
 import numpy as np
-import mediapipe as mp
+import time
 from PIL import Image
 import cv2
+import mediapipe as mp
 import tempfile
 
-# Load YOLOv5 model
+# Load YOLOv5 model using the ultralytics package
+from ultralytics import YOLO
+
 @st.cache_resource
 def load_model():
-    return torch.hub.load('ultralytics/yolov5', 'custom', path='best.pt', force_reload=True)
+    return YOLO('best.pt')  # Replace 'best.pt' with your trained model file path
 
 model = load_model()
 
@@ -44,7 +47,7 @@ if camera_input:
 
     # YOLOv5 detection
     results = model(rgb_image)
-    results.render()
+    results.render()  # Render detections
 
     # Convert rendered image for display
     rendered_image = Image.fromarray(results.ims[0])
@@ -54,8 +57,8 @@ if camera_input:
     height, width, _ = rgb_image.shape
     landmarks = []
 
-    with mp_face_mesh.FaceMesh(static_image_mode=True) as face_mesh:
-        face_results = face_mesh.process(rgb_image)
+    with face_mesh as mesh:
+        face_results = mesh.process(rgb_image)
 
         if face_results.multi_face_landmarks:
             for face_landmarks in face_results.multi_face_landmarks:
@@ -69,12 +72,12 @@ if camera_input:
                 left_eye = landmarks[362:368]
                 right_eye = landmarks[133:139]
 
-                # Calculate EAR
+                # Calculate EAR for both eyes
                 left_ear = eye_aspect_ratio(np.array(left_eye))
                 right_ear = eye_aspect_ratio(np.array(right_eye))
                 ear = (left_ear + right_ear) / 2.0
 
-                # Annotate the image
+                # Annotate the image with drowsiness detection
                 if ear < EAR_THRESHOLD:
                     cv2.putText(rgb_image, "Drowsy Detected!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
