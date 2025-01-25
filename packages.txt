@@ -2,3 +2,4 @@ cmake
 g++
 libopenblas-dev
 libx11-dev
+libgl1
