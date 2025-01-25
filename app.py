@@ -2,90 +2,100 @@ import streamlit as st
 import torch
 import numpy as np
 import time
+import imageio
 from PIL import Image
-import cv2
-import mediapipe as mp
 import tempfile
+import cv2
+import dlib  # For facial landmarks detection
 
-# Load YOLOv5 model using the ultralytics package
-from ultralytics import YOLO
-
+# Load YOLOv5 model
 @st.cache_resource
 def load_model():
-    return YOLO('best.pt')  # Replace with actual model path
+    # Load custom YOLOv5 model (replace 'best.pt' with your model path)
+    return torch.hub.load('ultralytics/yolov5', 'custom', path='best.pt')
 
 model = load_model()
 
-# Mediapipe Face Mesh for facial landmarks
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(refine_landmarks=True)
+# Load Dlib facial landmark predictor
+detector = dlib.get_frontal_face_detector()
+predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')  # Download from Dlib
 
-# Eye Aspect Ratio (EAR) calculation
+# Function to calculate Eye Aspect Ratio (EAR)
 def eye_aspect_ratio(eye):
+    # Compute the Euclidean distances between the two sets of vertical eye landmarks (synergy points)
     A = np.linalg.norm(eye[1] - eye[5])
     B = np.linalg.norm(eye[2] - eye[4])
     C = np.linalg.norm(eye[0] - eye[3])
-    return (A + B) / (2.0 * C)
+    ear = (A + B) / (2.0 * C)
+    return ear
 
+# Threshold for drowsiness
 EAR_THRESHOLD = 0.25
+CONSEC_FRAMES = 48
+frame_counter = 0
 
-st.title("Driver Drowsiness Detection")
-st.write("Detects drowsiness using YOLOv5 and Mediapipe.")
+st.title("Live Driver Drowsiness Detection")
+st.write("Detects drowsiness in real-time using YOLOv5.")
 
-# Streamlit Camera Input
+# Live camera input
+st.markdown("### Activate Camera")
 camera_input = st.camera_input("Start your camera to begin detection.")
 
 if camera_input:
     st.markdown("### Live Detection Output")
-    stframe = st.empty()  # Placeholder for live video feed
-    
-    # Capture and process video stream
-    video_bytes = camera_input.getvalue()
-    
-    # Save the image temporarily to process each frame
+    stframe = st.empty()  # Placeholder for video feed
+
+    # Save the camera input temporarily
     with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-        temp_file.write(video_bytes)
-        temp_image_path = temp_file.name
+        temp_file.write(camera_input.getvalue())
+        temp_video_path = temp_file.name
 
-    # Open and process the video stream
-    image = cv2.imread(temp_image_path)
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    
-    # YOLOv5 detection
-    results = model(rgb_image)
-    results.render()  # Render detections
+    # Open video using imageio
+    video_reader = imageio.get_reader(temp_video_path)
 
-    # Convert rendered image for display
-    rendered_image = Image.fromarray(results.ims[0])
+    for frame in video_reader:
+        # Convert from BGR (imageio default) to RGB for model compatibility
+        rgb_frame = np.array(frame)[..., :3]  # Ensure it's RGB and remove alpha channel if any
 
-    # Mediapipe facial landmark detection
-    gray_image = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2GRAY)
-    height, width, _ = rgb_image.shape
-    landmarks = []
+        # YOLOv5 detection for face detection
+        results = model(rgb_frame)
+        results.render()  # Render detections on the frame
 
-    with face_mesh as mesh:
-        face_results = mesh.process(rgb_image)
+        # Convert the rendered image back to RGB for Streamlit display
+        rendered_frame = np.array(results.ims[0])
 
-        if face_results.multi_face_landmarks:
-            for face_landmarks in face_results.multi_face_landmarks:
-                # Collect eye coordinates
-                landmarks = [
-                    (int(pt.x * width), int(pt.y * height))
-                    for pt in face_landmarks.landmark
-                ]
+        # Convert the frame to grayscale for face and eye detection
+        gray_frame = cv2.cvtColor(rendered_frame, cv2.COLOR_RGB2GRAY)
 
-                # Define eye regions
-                left_eye = landmarks[362:368]
-                right_eye = landmarks[133:139]
+        # Detect faces in the frame
+        faces = detector(gray_frame)
 
-                # Calculate EAR for both eyes
-                left_ear = eye_aspect_ratio(np.array(left_eye))
-                right_ear = eye_aspect_ratio(np.array(right_eye))
-                ear = (left_ear + right_ear) / 2.0
+        for face in faces:
+            # Get facial landmarks
+            landmarks = predictor(gray_frame, face)
 
-                # Annotate the image with drowsiness detection
-                if ear < EAR_THRESHOLD:
-                    cv2.putText(rgb_image, "Drowsy Detected!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            # Get the coordinates of the left and right eyes (indices 36-41 and 42-47)
+            left_eye = np.array([(landmarks.part(i).x, landmarks.part(i).y) for i in range(36, 42)])
+            right_eye = np.array([(landmarks.part(i).x, landmarks.part(i).y) for i in range(42, 48)])
 
-    # Display the processed frame
-    stframe.image(rendered_image, caption="Processed Frame", use_column_width=True)
+            # Calculate the EAR for both eyes
+            left_ear = eye_aspect_ratio(left_eye)
+            right_ear = eye_aspect_ratio(right_eye)
+            ear = (left_ear + right_ear) / 2.0
+
+            # Check if the EAR is below the threshold (indicating drowsiness)
+            if ear < EAR_THRESHOLD:
+                frame_counter += 1
+                if frame_counter >= CONSEC_FRAMES:
+                    # Driver is drowsy
+                    cv2.putText(rendered_frame, "Drowsy Detected!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            else:
+                frame_counter = 0
+
+        # Display the rendered frame with drowsiness detection
+        stframe.image(rendered_frame, caption="Detected Frame", use_column_width=True)
+
+        # Optional: Add a delay for smoother performance
+        time.sleep(0.1)
+
+    video_reader.close()
