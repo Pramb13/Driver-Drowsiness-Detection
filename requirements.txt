@@ -1,6 +1,6 @@
 streamlit
 opencv-python
-dlib
 numpy
 scipy
 playsound
+dlib==19.22.0
