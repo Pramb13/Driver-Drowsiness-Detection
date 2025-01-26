@@ -9,10 +9,10 @@ import av
 mp_face_mesh = mp.solutions.face_mesh
 mp_drawing = mp.solutions.drawing_utils
 
+
 # Function to check if eyes are closed using Eye Aspect Ratio (EAR)
 def is_eye_closed(eye_points, landmarks):
     """Calculate the Eye Aspect Ratio (EAR) to determine if the eye is closed."""
-    # Compute EAR: Ratio of vertical to horizontal distances
     vertical_1 = abs(landmarks[eye_points[1]].y - landmarks[eye_points[5]].y)
     vertical_2 = abs(landmarks[eye_points[2]].y - landmarks[eye_points[4]].y)
     horizontal = abs(landmarks[eye_points[0]].x - landmarks[eye_points[3]].x)
@@ -87,7 +87,7 @@ class VideoTransformer(VideoTransformerBase):
 st.title("Driver Drowsiness Detection")
 st.markdown(
     """
-    This app uses the webcam feed to detect drowsiness based on eye aspect ratio.
+    This app uses your webcam feed to detect drowsiness based on eye aspect ratio.
     Ensure your face is well-lit and visible to the camera.
     """
 )
