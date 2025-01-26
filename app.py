@@ -1,59 +1,39 @@
-import streamlit as st
+import mediapipe as mp
 import cv2
-import dlib
 import numpy as np
-from scipy.spatial import distance as dist
-from threading import Thread
-import playsound
-import queue
-import time
 
-# Your existing variables and functions
-FACE_DOWNSAMPLE_RATIO = 1.5
-RESIZE_HEIGHT = 460
+# Initialize MediaPipe Face Mesh
+mp_face_mesh = mp.solutions.face_mesh
+face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+mp_drawing = mp.solutions.drawing_utils
 
-thresh = 0.27
-modelPath = "models/shape_predictor_70_face_landmarks.dat"
-sound_path = "alarm.wav"
+def get_landmarks(image):
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(image_rgb)
+    if results.multi_face_landmarks:
+        landmarks = results.multi_face_landmarks[0]
+        return landmarks
+    return None
 
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor(modelPath)
+def draw_landmarks(image, landmarks):
+    mp_drawing.draw_landmarks(image, landmarks, mp_face_mesh.FACEMESH_CONTOURS)
 
-leftEyeIndex = [36, 37, 38, 39, 40, 41]
-rightEyeIndex = [42, 43, 44, 45, 46, 47]
+# Start video capture
+capture = cv2.VideoCapture(0)
+while True:
+    ret, frame = capture.read()
+    if not ret:
+        break
 
-# Functions (eye_aspect_ratio, checkEyeStatus, etc.) as per your script
+    # Process the frame to get face landmarks
+    landmarks = get_landmarks(frame)
+    if landmarks:
+        draw_landmarks(frame, landmarks)
 
-def main():
-    st.title("Drowsiness Detection System")
+    cv2.imshow("Face Mesh", frame)
 
-    # Allow file upload (instead of webcam input)
-    uploaded_file = st.file_uploader("Upload a video", type=["mp4", "avi", "mov"])
+    if cv2.waitKey(1) & 0xFF == 27:
+        break
 
-    if uploaded_file is not None:
-        # Convert uploaded file to OpenCV format
-        vid = cv2.VideoCapture(uploaded_file)
-        
-        while True:
-            ret, frame = vid.read()
-            if not ret:
-                break
-
-            # Your video processing logic
-            adjusted = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            landmarks = getLandmarks(adjusted)  # your method for detecting landmarks
-
-            # Visualize the results in Streamlit
-            st.image(frame, channels="BGR", use_column_width=True)
-            
-            # Add text or status for drowsiness alert
-            if drowsy:  # Assume you've set the `drowsy` variable in your code
-                st.error("Drowsiness Alert!")
-            else:
-                st.success("All clear!")
-
-    else:
-        st.info("Please upload a video.")
-
-if __name__ == "__main__":
-    main()
+capture.release()
+cv2.destroyAllWindows()
