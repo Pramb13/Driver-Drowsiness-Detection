@@ -3,4 +3,4 @@ opencv-python
 numpy
 scipy
 playsound
-https://github.com/iwantmyname/dlib/releases/download/19.22.0/dlib-19.22.0-cp38-cp38-win_amd64.whl
+mediapipe
