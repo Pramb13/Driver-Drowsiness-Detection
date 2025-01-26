@@ -1,6 +1,5 @@
-streamlit
-opencv-python
-numpy
-scipy
-playsound
-mediapipe
+streamlit==1.17.0  # Or the latest version
+opencv-python==4.5.5.64  # Compatible version
+numpy==1.23.0
+mediapipe==0.8.9
+playsound==1.2.2  # Optional, based on your app
