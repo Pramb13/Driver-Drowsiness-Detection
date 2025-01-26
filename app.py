@@ -8,17 +8,21 @@ st.title("Real-Time Driver Drowsiness Detection System")
 # Start video capture from webcam
 video_capture = cv2.VideoCapture(0)
 
+# Create a placeholder for the video stream
+frame_placeholder = st.empty()
+
 # Display the video stream
 while True:
     ret, frame = video_capture.read()
     if not ret:
+        st.write("Failed to capture video")
         break
 
     # Process the frame for drowsiness detection
     processed_frame = process_frame(frame)
 
     # Display the processed frame
-    st.image(processed_frame, channels="BGR", use_column_width=True)
+    frame_placeholder.image(processed_frame, channels="BGR", use_column_width=True)
 
 # Release the video capture object
 video_capture.release()
