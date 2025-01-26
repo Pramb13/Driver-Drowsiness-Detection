@@ -1,23 +1,24 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="drowsiness-detection",
+    name="driver-drowsiness-detection",  # Name of your app/package
     version="0.1",
-    packages=find_packages(),
-    install_requires=[
+    packages=find_packages(),  # Automatically find packages
+    install_requires=[  # List of dependencies
+        "streamlit",
         "opencv-python",
-        "dlib",
         "numpy",
-        "scipy",
-        "playsound",
+        "mediapipe",
+        "playsound",  # Optional
     ],
-    entry_points={
-        "console_scripts": [
-            "drowsiness-detection = app:main",  # Update with the correct entry point
-        ]
+    entry_points={  # Optional: if you want to add command-line tools
+        'console_scripts': [
+            'start-drowsiness-detection = app:main',  # Replace 'main' with the actual function name in app.py to run
+        ],
     },
-    include_package_data=True,
-    package_data={
-        "": ["models/*.dat", "alarm.wav"],  # Make sure these files are included
-    }
+    classifiers=[  # Optional classifiers
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+    ],
 )
