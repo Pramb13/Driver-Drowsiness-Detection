@@ -1,89 +1,47 @@
+# Driver Drowsiness Detection System
+
 import cv2
 import numpy as np
 import streamlit as st
-import time
-import playsound
-from scipy.spatial import distance as dist
-from threading import Thread
-import mediapipe as mp
+from keras.models import load_model
 
-# Setup Streamlit page
-st.set_page_config(page_title="Driver Drowsiness Detection", layout="wide")
-st.title("Driver Drowsiness Detection")
+# Load pre-trained model
+model = load_model('drowsiness_model.h5')
 
-# Constants
-thresh = 0.27
-sound_path = "assets/alarm.wav"
-drowsyTime = 1.5  # 1500ms for drowsiness detection
-
-# Initialize mediapipe face mesh detector
-mp_face_mesh = mp.solutions.face_mesh
-mp_drawing = mp.solutions.drawing_utils
-face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1)
-
-# Setup camera
-capture = cv2.VideoCapture(0)
-
-# Functions
-def eye_aspect_ratio(eye):
-    A = dist.euclidean(eye[1], eye[5])
-    B = dist.euclidean(eye[2], eye[4])
-    C = dist.euclidean(eye[0], eye[3])
-    ear = (A + B) / (2.0 * C)
-    return ear
-
-def soundAlert(path):
-    playsound.playsound(path)
-
-def detect_face_landmarks(frame):
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = face_mesh.process(frame_rgb)
-    if results.multi_face_landmarks:
-        landmarks = results.multi_face_landmarks[0]
-        return landmarks
-    return None
-
-def check_eye_status(landmarks):
-    left_eye = [landmarks.landmark[i] for i in range(33, 133, 2)]
-    right_eye = [landmarks.landmark[i] for i in range(362, 463, 2)]
-    
-    left_ear = eye_aspect_ratio(left_eye)
-    right_ear = eye_aspect_ratio(right_eye)
-    
-    ear = (left_ear + right_ear) / 2.0
-    return ear < thresh
-
-# Streamlit app logic
-st.sidebar.header("Settings")
-drowsy_time = st.sidebar.slider("Drowsiness Alert Time (seconds)", min_value=1, max_value=5, value=1, step=1)
-
-frame_count = 0
-drowsy = False
-
-while capture.isOpened():
-    ret, frame = capture.read()
-    if not ret:
-        break
-    
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    landmarks = detect_face_landmarks(frame)
-
-    if landmarks:
-        eye_status = check_eye_status(landmarks)
-        if eye_status:
-            frame_count = 0
+# Function to detect drowsiness
+def detect_drowsiness(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+    for (x, y, w, h) in faces:
+        roi_gray = gray[y:y+h, x:x+w]
+        roi_gray = cv2.resize(roi_gray, (64, 64))
+        roi_gray = roi_gray.astype('float32') / 255.0
+        roi_gray = np.reshape(roi_gray, (1, 64, 64, 1))
+        prediction = model.predict(roi_gray)
+        if prediction[0][0] > 0.5:
+            label = "Drowsy"
         else:
-            frame_count += 1
-            if frame_count > drowsy_time * 30:  # Assuming 30 FPS
-                drowsy = True
-                thread = Thread(target=soundAlert, args=(sound_path,))
-                thread.setDaemon(True)
-                thread.start()
+            label = "Alert"
+        cv2.putText(frame, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+        cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+    return frame
 
-    # Display result on Streamlit
-    st.image(frame, channels="RGB", use_column_width=True)
-    if drowsy:
-        st.warning("**Drowsiness Alert!** Please take a break.")
+# Streamlit app
+st.title("Driver Drowsiness Detection System")
+st.write("This application detects drowsiness in drivers using live camera feed.")
 
-# Release camera resources
-capture.release()
+# Start video capture
+video_capture = cv2.VideoCapture(0)
+
+if st.button("Start Detection"):
+    while True:
+        ret, frame = video_capture.read()
+        if not ret:
+            break
+        frame = detect_drowsiness(frame)
+        st.image(frame, channels="BGR")
+        if st.button("Stop Detection"):
+            break
+
+video_capture.release()
+cv2.destroyAllWindows()
