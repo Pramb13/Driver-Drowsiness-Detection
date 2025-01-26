@@ -7,11 +7,6 @@ st.title("Driver Drowsiness Detection System")
 uploaded_file = st.file_uploader("Upload a video file...", type=["mp4", "avi"])
 
 if uploaded_file is not None:
-    # Read the video file
-    video_file = uploaded_file.read()
-    video_array = np.frombuffer(video_file, np.uint8)
-    video = cv2.imdecode(video_array, cv2.IMREAD_COLOR)
-
     # Create a video capture object
     cap = cv2.VideoCapture(uploaded_file.name)
 
