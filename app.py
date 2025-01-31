@@ -60,10 +60,7 @@ def display_result(image, predicted_class_idx, prediction_score):
 
 # Main Streamlit interface
 def main():
-    """Main function to handle Streamlit interface and prediction process."""
-    # Create Pinecone index (or use an existing one)
-    global index
-    index = create_pinecone_index()
+    """Main function to handle Streamlit interface and prediction process.""
 
     # Load model and feature extractor
     model, feature_extractor = load_model()
