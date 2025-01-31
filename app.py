@@ -2,10 +2,9 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-from pinecone import pinecone as PineconeClient
 import numpy as np
 import os
-import time
+import pinecone  # Import pinecone correctly
 
 # Set Hugging Face API key and Pinecone API key from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
@@ -25,14 +24,14 @@ class DrowsinessDetection:
     def __init__(self):
         try:
             st.write("Initializing Drowsiness Detection...")
-            # Initialize Pinecone connection
+            # Initialize Pinecone connection using pinecone.init
+            pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
             self.index_name = INDEX_NAME  # Index name from Streamlit secrets
-            self.pc = PineconeClient.Client(api_key=PINECONE_API_KEY, environment=pinecone_environment)
-
+            
             # Check if the index exists, create if it doesn't
-            if self.index_name not in self.pc.list_indexes().names():
+            if self.index_name not in pinecone.list_indexes():
                 st.write(f"Creating Pinecone index: {self.index_name}")
-                self.pc.create_index(
+                pinecone.create_index(
                     name=self.index_name,
                     dimension=1024,  # The dimension of the embeddings (match this with model output)
                     metric='cosine',
@@ -42,7 +41,7 @@ class DrowsinessDetection:
                 st.write(f"Index '{self.index_name}' already exists.")
             
             # Assign the Pinecone index
-            self.index = self.pc.Index(self.index_name)
+            self.index = pinecone.Index(self.index_name)  # Corrected way to access the index
             st.write("Pinecone index is set.")
         
         except Exception as e:
