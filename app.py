@@ -2,9 +2,9 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
+from pinecone import Pinecone as PineconeClient
 import numpy as np
 import os
-import pinecone
 
 # Set Hugging Face API key and Pinecone API key from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
@@ -19,52 +19,67 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
 pinecone_environment = st.secrets["pinecone"]["environment"]
 
-# Access the index
-index = pinecone.Index(INDEX_NAME)
+class DrowsinessDetection:
+    def __init__(self):
+        """Initialize Pinecone client and ensure the index exists"""
+        self.index_name = "imageembedding"  # Your Pinecone index name
+        self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))  # Initialize Pinecone client
 
-# Initialize the model and feature extractor
-def load_model():
-    """Load pre-trained model and feature extractor."""
-    model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
-    feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
-    return model, feature_extractor
+        # Check if index exists; create if not
+        if self.index_name not in self.pc.list_indexes().names():
+            self.pc.create_index(
+                name=self.index_name,
+                dimension=1024,  # Ensure this matches the vector size
+                metric='cosine',  # Using cosine distance for vector similarity
+            )
+            st.write(f"Index '{self.index_name}' created.")
+        else:
+            st.write(f"Index '{self.index_name}' already exists.")
 
-# Store data in Pinecone
-def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
-    """Store image prediction data in Pinecone."""
-    feature_vector = extract_image_features(image)  # Extract image features
+        # Access the index
+        self.index = self.pc.Index(self.index_name)
 
-    # Prepare metadata and generate unique vector ID
-    metadata = {
-        "class": LABELS[predicted_class_idx],
-        "score": prediction_score,
-    }
-    vector_id = str(np.random.randint(0, 1000000))  # Generate a random ID
+    def store_in_pinecone(self, image, predicted_class_idx, prediction_score):
+        """Store image prediction data in Pinecone."""
+        feature_vector = self.extract_image_features(image)  # Extract image features
 
-    # Create the vector with the ID, feature vector, and metadata
-    vector = {
-        "id": vector_id,
-        "values": feature_vector.tolist(),  # Ensure it's a list for Pinecone
-        "metadata": metadata
-    }
+        # Prepare metadata and generate unique vector ID
+        metadata = {
+            "class": LABELS[predicted_class_idx],
+            "score": prediction_score,
+        }
+        vector_id = str(np.random.randint(0, 1000000))  # Generate a random ID
 
-    # Upsert the vector into the Pinecone index
-    upsert_response = index.upsert(
-        vectors=[vector],
-        namespace="ns1"  # Using "ns1" as the namespace
-    )
-    st.write(f"Upserted data with ID: {vector_id}")
-    return upsert_response
+        # Create the vector with the ID, feature vector, and metadata
+        vector = {
+            "id": vector_id,
+            "values": feature_vector.tolist(),  # Ensure it's a list for Pinecone
+            "metadata": metadata
+        }
 
-def extract_image_features(image):
-    """Extract features from the image using the model's feature extractor."""
-    model, feature_extractor = load_model()
-    inputs = feature_extractor(images=image, return_tensors="pt")
-    with torch.no_grad():
-        outputs = model(**inputs)
-        feature_vector = outputs.logits  # Raw features from the model (logits)
-        feature_vector = feature_vector.squeeze().cpu().numpy()  # Ensure it's a 1D numpy array
-    return feature_vector  # Return the numpy array
+        # Upsert the vector into the Pinecone index
+        upsert_response = self.index.upsert(
+            vectors=[vector],
+            namespace="ns1"  # Using "ns1" as the namespace
+        )
+        st.write(f"Upserted data with ID: {vector_id}")
+        return upsert_response
+
+    def extract_image_features(self, image):
+        """Extract features from the image using the model's feature extractor."""
+        model, feature_extractor = self.load_model()
+        inputs = feature_extractor(images=image, return_tensors="pt")
+        with torch.no_grad():
+            outputs = model(**inputs)
+            feature_vector = outputs.logits  # Raw features from the model (logits)
+            feature_vector = feature_vector.squeeze().cpu().numpy()  # Ensure it's a 1D numpy array
+        return feature_vector  # Return the numpy array
+
+    def load_model(self):
+        """Load pre-trained model and feature extractor."""
+        model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
+        feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
+        return model, feature_extractor
 
 # Preprocess image for the model
 def preprocess_image(image, feature_extractor):
@@ -90,41 +105,28 @@ def display_result(image, predicted_class_idx, prediction_score):
     prediction_label = LABELS[predicted_class_idx]
     st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
 
-# DrowsinessDetection class
-class DrowsinessDetection:
-    def __init__(self):
-        # Load model and feature extractor
-        self.model, self.feature_extractor = load_model()
-
-    def predict_and_store(self, image):
-        """Perform prediction and store results in Pinecone."""
-        # Preprocess image
-        inputs = preprocess_image(image, self.feature_extractor)
-
-        # Get prediction
-        predicted_class_idx, prediction_score = get_prediction(self.model, inputs)
-
-        # Store result in Pinecone
-        store_in_pinecone(index, image, predicted_class_idx, prediction_score)
-
-        return predicted_class_idx, prediction_score
-
-
 # Main Streamlit interface
 def main():
     """Main function to handle Streamlit interface and prediction process."""
-    # Instantiate the DrowsinessDetection class
+    # Initialize DrowsinessDetection class
     drowsiness_detector = DrowsinessDetection()
+
+    # Load model and feature extractor
+    model, feature_extractor = drowsiness_detector.load_model()
 
     # Capture image from webcam
     camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
     
     if camera_input is not None:
-        # Load image
+        # Load and preprocess image
         img = Image.open(camera_input)
+        inputs = preprocess_image(img, feature_extractor)
 
-        # Get prediction and store in Pinecone
-        predicted_class_idx, prediction_score = drowsiness_detector.predict_and_store(img)
+        # Get prediction
+        predicted_class_idx, prediction_score = get_prediction(model, inputs)
+
+        # Store the result in Pinecone
+        drowsiness_detector.store_in_pinecone(img, predicted_class_idx, prediction_score)
 
         # Display the image and prediction result
         display_result(img, predicted_class_idx, prediction_score)
