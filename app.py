@@ -37,8 +37,8 @@ def initialize_pinecone():
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     """Store image prediction data in Pinecone."""
     # Convert image to a vector (using feature extractor or model)
-    vector = np.random.rand(768).tolist()  # Replace with actual image feature vector from the model
-    
+    feature_vector = extract_image_features(image)  # Extract image features from model
+
     # Prepare the metadata for the image
     metadata = {
         "class": LABELS[predicted_class_idx],
@@ -49,7 +49,16 @@ def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     vector_id = str(np.random.randint(0, 1000000))
 
     # Upsert the vector and metadata into Pinecone
-    index.upsert([(vector_id, vector, metadata)])
+    index.upsert([(vector_id, feature_vector.tolist(), metadata)])
+
+def extract_image_features(image):
+    """Extract features from the image using the model's feature extractor."""
+    model, feature_extractor = load_model()
+    inputs = feature_extractor(images=image, return_tensors="pt")
+    with torch.no_grad():
+        outputs = model(**inputs)
+        feature_vector = outputs.logits  # Raw features from the model
+    return feature_vector.squeeze().numpy()  # Convert to numpy array
 
 # Preprocess image for the model
 def preprocess_image(image, feature_extractor):
