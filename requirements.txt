@@ -3,4 +3,4 @@ torch
 torchvision
 transformers
 Pillow
-pymongo
+pinecone-client
