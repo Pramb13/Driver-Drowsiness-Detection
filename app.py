@@ -25,12 +25,12 @@ class DrowsinessDetection:
         try:
             self.index_name = "imageembedding"  # Your Pinecone index name
 
-            # Initialize Pinecone client
-            pinecone.init(api_key=os.getenv('PINECONE_API_KEY'), environment=pinecone_environment)
+            # Initialize Pinecone client using the new Pinecone class
+            self.pc = pinecone.Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
 
             # Check if index exists; create if not
-            if self.index_name not in pinecone.list_indexes():
-                pinecone.create_index(
+            if self.index_name not in self.pc.list_indexes().names():
+                self.pc.create_index(
                     name=self.index_name,
                     dimension=1024,  # Ensure this matches the vector size from your model
                     metric='cosine',  # Using cosine distance for vector similarity
@@ -40,7 +40,7 @@ class DrowsinessDetection:
                 st.write(f"Index '{self.index_name}' already exists.")
 
             # Access the index
-            self.index = pinecone.Index(self.index_name)
+            self.index = self.pc.Index(self.index_name)
         except Exception as e:
             st.write(f"Error initializing Pinecone: {e}")
 
@@ -144,9 +144,24 @@ def main():
             display_result(img, predicted_class_idx, prediction_score)
         
     elif user_type == "Admin":
-        st.title("Admin Dashboard")
-        st.write("This is the admin dashboard. You can manage the drowsiness detection model, view analytics, or perform other admin tasks.")
-        # Add admin functionality here (for example: view stored data, manage model, etc.)
+        # Admin Login - Simple Username and Password
+        st.title("Admin Login")
+        
+        # Define admin credentials (you can modify this to make it dynamic, e.g., stored in a database)
+        admin_username = "admin"
+        admin_password = "password123"
+        
+        # User input for username and password
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+
+        # Check if the credentials are correct
+        if username == admin_username and password == admin_password:
+            st.write("Login successful! Welcome to the Admin Dashboard.")
+            st.write("This is the admin dashboard. You can manage the drowsiness detection model, view analytics, or perform other admin tasks.")
+            # Add additional admin functionalities here (e.g., viewing stored data, retraining model)
+        else:
+            st.write("Invalid username or password.")
 
 if __name__ == "__main__":
     main()
