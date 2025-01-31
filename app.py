@@ -27,7 +27,6 @@ def load_model():
 
       # Fetch Pinecone environment from Streamlit secrets
 pinecone_environment = st.secrets["pinecone"]["environment"]  # Get environment from secrets
-pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
     
     # Access the Pinecone index
 index = pinecone.Index(INDEX_NAME)
