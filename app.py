@@ -1,4 +1,3 @@
-import os
 import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
@@ -9,8 +8,10 @@ import numpy as np
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")  # Securely fetch the API key from the environment
-INDEX_NAME = "drowsiness-detection"  # Name of the Pinecone index
+
+# Fetch Pinecone API key and index name securely from Streamlit secrets
+PINECONE_API_KEY = st.secrets["pinecone"]["api_key"]  # Secure access to the Pinecone API key
+INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
 
 # Initialize the model and feature extractor
 def load_model():
@@ -26,9 +27,9 @@ def initialize_pinecone():
         st.error("Pinecone API key not set!")
         return None
     
-    pinecone.init(api_key=PINECONE_API_KEY, environment="us-west1-gcp")  # Change environment as needed
+    pinecone.init(api_key=PINECONE_API_KEY, environment="us-west1-gcp")  # Change environment if needed
     if INDEX_NAME not in pinecone.list_indexes():
-        pinecone.create_index(INDEX_NAME, dimension=768)
+        pinecone.create_index(INDEX_NAME, dimension=768)  # Dimension should match model output
     
     return pinecone.Index(INDEX_NAME)
 
@@ -36,7 +37,7 @@ def initialize_pinecone():
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     """Store image prediction data in Pinecone."""
     # Convert image to a vector (using feature extractor or model)
-    vector = np.random.rand(768).tolist()  # Replace with actual image feature vector
+    vector = np.random.rand(768).tolist()  # Replace with actual image feature vector from the model
     
     # Prepare the metadata for the image
     metadata = {
@@ -80,7 +81,7 @@ def main():
     # Load model and feature extractor
     model, feature_extractor = load_model()
 
-    # Initialize Pinecone
+    # Initialize Pinecone index
     index = initialize_pinecone()
     if not index:
         return  # Stop the app if Pinecone initialization fails
