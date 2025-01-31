@@ -2,7 +2,6 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-import requests
 import numpy as np
 
 # Load Hugging Face model and feature extractor (for vision tasks)
@@ -29,7 +28,15 @@ if camera_input is not None:
         outputs = model(**inputs)
         logits = outputs.logits  # Get the raw prediction scores
         predicted_class_idx = torch.argmax(logits, dim=-1).item()
+        prediction_score = logits.max().item()  # Highest score value
 
     # Display the image and prediction
-    st.image(img, caption="Captured Image from Webcam", use_column_width=True)
-    st.write(f"Prediction: Class {predicted_class_idx} with score {logits.max().item()}")
+    st.image(img, caption="Captured Image from Webcam", use_container_width=True)
+
+    # Interpretation of the result (customize this based on your labels)
+    # Assuming Class 0 is "Not Drowsy" and Class 1 is "Drowsy"
+    if predicted_class_idx == 0:
+        st.write(f"Prediction: Not Drowsy with score {prediction_score:.2f}")
+    else:
+        st.write(f"Prediction: Drowsy with score {prediction_score:.2f}")
+
