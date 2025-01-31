@@ -5,6 +5,7 @@ from PIL import Image
 import pinecone
 import numpy as np
 import os
+import time
 
 # Set Hugging Face API key and Pinecone API key from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
@@ -35,11 +36,11 @@ def initialize_pinecone():
     # Fetch Pinecone environment from Streamlit secrets
     pinecone_environment = st.secrets["pinecone"]["environment"]  # Get environment from secrets
     
-    # Initialize Pinecone client using the new approach
-    pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
-    
+    # Initialize Pinecone client (for v2.x.x)
+    client = pinecone.Client(api_key=PINECONE_API_KEY, environment=pinecone_environment)
+
     # Access the Pinecone index
-    index = pinecone.Index(INDEX_NAME)
+    index = client.index(INDEX_NAME)
     return index
 
 # Store data in Pinecone
@@ -86,6 +87,11 @@ def get_prediction(model, inputs):
         predicted_class_idx = torch.argmax(logits, dim=-1).item()
         prediction_score = logits.max().item()  # Highest score value
     return predicted_class_idx, prediction_score
+
+# Lazy import for sentence transformer model
+def load_sentence_transformer():
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer('all-MiniLM-L6-v2')
 
 # Display the image and prediction result
 def display_result(image, predicted_class_idx, prediction_score):
