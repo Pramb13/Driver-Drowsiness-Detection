@@ -1,72 +1,43 @@
-import cv2
-import numpy as np
 import streamlit as st
 from keras.models import load_model
-from PIL import Image
+import io
+import os
+import tensorflow as tf
+import h5py
 
-# Load the pre-trained model (make sure to specify the correct path if necessary)
-model = load_model('drowsiness_model.h5')
+# Display versions for debugging
+st.write(f"TensorFlow version: {tf.__version__}")
+st.write(f"h5py version: {h5py.__version__}")
 
-# Load Haar cascade for face detection
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+# Check if model file exists in the current directory (for static files)
+model_path = 'drowsiness_model.h5'
 
-# Function to detect drowsiness
-def detect_drowsiness(frame):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-    
-    for (x, y, w, h) in faces:
-        roi_gray = gray[y:y+h, x:x+w]
-        roi_gray = cv2.resize(roi_gray, (64, 64))
-        roi_gray = roi_gray.astype('float32') / 255.0
-        roi_gray = np.reshape(roi_gray, (1, 64, 64, 1))
-        
-        # Prediction using the loaded model
-        prediction = model.predict(roi_gray)
-        
-        # Determine the drowsiness state
-        if prediction[0][0] > 0.5:
-            label = "Drowsy"
-        else:
-            label = "Alert"
-        
-        # Draw bounding box and label on face
-        cv2.putText(frame, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
-    
-    return frame
+if os.path.exists(model_path):
+    st.write(f"Model file found at: {os.path.abspath(model_path)}")
+else:
+    st.write("Model file not found in the specified path.")
 
-# Convert OpenCV frame to PIL Image for Streamlit
-def convert_frame_to_pil(frame):
-    pil_img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-    return pil_img
+# File uploader widget for dynamically uploading the model
+uploaded_file = st.file_uploader("Choose a model file (h5)", type=["h5"])
 
-# Streamlit app interface
-st.title("Driver Drowsiness Detection System")
-st.write("This application detects drowsiness in drivers using live camera feed.")
+if uploaded_file is not None:
+    # If file is uploaded, attempt to load it
+    try:
+        # Load the model from the uploaded file
+        model = load_model(io.BytesIO(uploaded_file.read()))
+        st.write("Model loaded successfully!")
+    except Exception as e:
+        # If there is an error, display the error message
+        st.error(f"Error loading model: {str(e)}")
 
-# Start video capture
-video_capture = cv2.VideoCapture(0)
+elif os.path.exists(model_path):
+    # If no file is uploaded, attempt to load the static model file
+    try:
+        model = load_model(model_path)
+        st.write("Model loaded successfully from the local path!")
+    except Exception as e:
+        # If there is an error, display the error message
+        st.error(f"Error loading model from local path: {str(e)}")
 
-# Button to start detection
-if st.button("Start Detection"):
-    video_container = st.empty()
-    
-    while True:
-        ret, frame = video_capture.read()
-        if not ret:
-            break
-        
-        frame = detect_drowsiness(frame)
-        pil_frame = convert_frame_to_pil(frame)
-        
-        # Display the frame in Streamlit
-        video_container.image(pil_frame)
-        
-        # Stop detection button
-        if st.button("Stop Detection"):
-            break
-
-# Release video capture and close any OpenCV windows
-video_capture.release()
-cv2.destroyAllWindows()
+# Optionally, add code to use the loaded model for inference
+# if model is loaded successfully, you can use it here
