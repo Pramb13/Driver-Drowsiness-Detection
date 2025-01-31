@@ -91,6 +91,12 @@ def main():
                 img = Image.open(camera_input)
                 inputs = preprocess_image(img, feature_extractor)
                 predicted_class_idx, prediction_score = get_prediction(model, inputs)
+
+                # Adjust threshold to predict "Drowsy" if model is not confident about "Not Drowsy"
+                if prediction_score < 2.5:  # Set a confidence threshold for drowsiness prediction
+                    predicted_class_idx = 1  # Force prediction to "Drowsy"
+                    prediction_score = 0.85  # Set a default confidence score
+
                 display_result(img, predicted_class_idx, prediction_score)
     else:
         st.title("Admin Dashboard")
