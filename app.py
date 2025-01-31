@@ -26,43 +26,24 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
- def initialize(self):
-        """Initialize Pinecone client and create the index if it doesn't exist."""
-        # Initialize Pinecone client
-        pinecone.init(api_key=self.api_key, environment=self.environment)
-        self.pc = pinecone.Client()  # Initialize Pinecone client
-        if self.index_name not in self.pc.list_indexes():
-            # Create the index if it doesn't exist
-            self.pc.create_index(
-                name=self.index_name,
-                dimension=384,  # Ensure this matches the vector size
-                metric='cosine',  # Using cosine distance for vector similarity
-            )
-            st.write(f"Index '{self.index_name}' created.")
-        else:
-            st.write(f"Index '{self.index_name}' already exists.")
-        
-        # Access the index
-        self.index = self.pc.Index(self.index_name)
+# Initialize Pinecone client
+pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
+pc = pinecone.Client()  # Initialize Pinecone client
 
-    def upsert_data(self, vectors, namespace="default"):
-        """Upsert data into Pinecone with specified namespace."""
-        response = self.index.upsert(
-            vectors=vectors,
-            namespace=namespace
-        )
-        return response
+# Create the index if it doesn't exist
+if INDEX_NAME not in pc.list_indexes():
+    # Create the index if it doesn't exist
+    pc.create_index(
+        name=INDEX_NAME,
+        dimension=384,  # Ensure this matches the vector size
+        metric='cosine',  # Using cosine distance for vector similarity
+    )
+    st.write(f"Index '{INDEX_NAME}' created.")
+else:
+    st.write(f"Index '{INDEX_NAME}' already exists.")
 
-    def query_data(self, query_vector, namespace="default", top_k=2):
-        """Query data from Pinecone."""
-        response = self.index.query(
-            namespace=namespace,
-            vector=query_vector,
-            top_k=top_k,
-            include_values=True,
-            include_metadata=True
-        )
-        return response
+# Access the index
+index = pc.Index(INDEX_NAME)
 
 # Store data in Pinecone
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
@@ -84,7 +65,10 @@ def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     }
 
     # Upsert the vector into the Pinecone index
-    upsert_response = index.upsert_data([vector], namespace="ns1")  # Using "ns1" as the namespace
+    upsert_response = index.upsert(
+        vectors=[vector],
+        namespace="ns1"  # Using "ns1" as the namespace
+    )
     st.write(f"Upserted data with ID: {vector_id}")
     return upsert_response
 
@@ -127,13 +111,6 @@ def main():
     """Main function to handle Streamlit interface and prediction process."""
     # Load model and feature extractor
     model, feature_extractor = load_model()
-
-    # Initialize Pinecone client and create index if it doesn't exist
-    pinecone_handler = PineconeHandler(PINECONE_API_KEY, INDEX_NAME, pinecone_environment)
-    index = pinecone_handler.index  # Get the initialized Pinecone index
-
-    if not index:
-        return  # Stop the app if Pinecone initialization fails
 
     # Capture image from webcam
     camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
