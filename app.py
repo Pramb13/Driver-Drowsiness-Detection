@@ -2,83 +2,36 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-import pinecone
 import numpy as np
 import os
 
-# Set Hugging Face API key and Pinecone API key from Streamlit secrets
+# Set Hugging Face API key from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
-os.environ['PINECONE_API_KEY'] = st.secrets["pinecone"]["api_key"]
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 
-# Fetch Pinecone API key, index name, and environment securely from Streamlit secrets
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
-pinecone_environment = st.secrets["pinecone"]["environment"]
+# Predefined credentials for user and admin
+# Predefined usernames and passwords (for demonstration purposes)
+USER_CREDENTIALS = {"user": "user_password"}
+ADMIN_CREDENTIALS = {"admin": "admin_password"}
 
+# Function for User login
+def login(username, password):
+    # Check credentials for user and admin
+    if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
+        return "user"
+    elif username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[username] == password:
+        return "admin"
+    else:
+        return None
+
+# Drowsiness detection class
 class DrowsinessDetection:
     def __init__(self):
-        """Initialize Pinecone client and ensure the index exists"""
-        try:
-            self.index_name = "imageembedding"  # Your Pinecone index name
-
-            # Initialize Pinecone client using the new Pinecone class
-            self.pc = pinecone.Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
-
-            # Check if index exists; create if not
-            if self.index_name not in self.pc.list_indexes().names():
-                self.pc.create_index(
-                    name=self.index_name,
-                    dimension=1024,  # Ensure this matches the vector size from your model
-                    metric='cosine',  # Using cosine distance for vector similarity
-                )
-                st.write(f"Index '{self.index_name}' created.")
-            else:
-                st.write(f"Index '{self.index_name}' already exists.")
-
-            # Access the index
-            self.index = self.pc.Index(self.index_name)
-        except Exception as e:
-            st.write(f"Error initializing Pinecone: {e}")
-
-    def store_in_pinecone(self, image, predicted_class_idx, prediction_score):
-        """Store image prediction data in Pinecone."""
-        feature_vector = self.extract_image_features(image)  # Extract image features
-
-        # Prepare metadata and generate unique vector ID
-        metadata = {
-            "class": LABELS[predicted_class_idx],
-            "score": prediction_score,
-        }
-        vector_id = str(np.random.randint(0, 1000000))  # Generate a random ID
-
-        # Create the vector with the ID, feature vector, and metadata
-        vector = {
-            "id": vector_id,
-            "values": feature_vector.tolist(),  # Ensure it's a list for Pinecone
-            "metadata": metadata
-        }
-
-        # Upsert the vector into the Pinecone index
-        upsert_response = self.index.upsert(
-            vectors=[vector],
-            namespace="ns1"  # Using "ns1" as the namespace
-        )
-        st.write(f"Upserted data with ID: {vector_id}")
-        return upsert_response
-
-    def extract_image_features(self, image):
-        """Extract features from the image using the model's feature extractor."""
-        model, feature_extractor = self.load_model()
-        inputs = feature_extractor(images=image, return_tensors="pt")
-        with torch.no_grad():
-            outputs = model(**inputs)
-            feature_vector = outputs.logits  # Raw features from the model (logits)
-            feature_vector = feature_vector.squeeze().cpu().numpy()  # Ensure it's a 1D numpy array
-        return feature_vector  # Return the numpy array
+        """Initialize the model and the feature extractor"""
+        self.model, self.feature_extractor = self.load_model()
 
     def load_model(self):
         """Load pre-trained model and feature extractor."""
@@ -86,22 +39,30 @@ class DrowsinessDetection:
         feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
         return model, feature_extractor
 
+    def extract_image_features(self, image):
+        """Extract features from the image using the model's feature extractor."""
+        inputs = self.feature_extractor(images=image, return_tensors="pt")
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            feature_vector = outputs.logits  # Raw features from the model (logits)
+            feature_vector = feature_vector.squeeze().cpu().numpy()  # Ensure it's a 1D numpy array
+        return feature_vector  # Return the numpy array
+
+    def get_prediction(self, inputs):
+        """Make a prediction using the model and return the predicted class and confidence."""
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            logits = outputs.logits  # Get the raw prediction scores
+            predicted_class_idx = torch.argmax(logits, dim=-1).item()
+            prediction_score = logits.max().item()  # Highest score value
+        return predicted_class_idx, prediction_score
+
 # Preprocess image for the model
 def preprocess_image(image, feature_extractor):
     """Preprocess the image for model prediction."""
     image = image.convert("RGB")
     inputs = feature_extractor(images=image, return_tensors="pt")
     return inputs
-
-# Make prediction using the model
-def get_prediction(model, inputs):
-    """Make a prediction using the model and return the predicted class and confidence."""
-    with torch.no_grad():
-        outputs = model(**inputs)
-        logits = outputs.logits  # Get the raw prediction scores
-        predicted_class_idx = torch.argmax(logits, dim=-1).item()
-        prediction_score = logits.max().item()  # Highest score value
-    return predicted_class_idx, prediction_score
 
 # Display the image and prediction result
 def display_result(image, predicted_class_idx, prediction_score):
@@ -114,54 +75,61 @@ def display_result(image, predicted_class_idx, prediction_score):
 def main():
     """Main function to handle Streamlit interface and prediction process."""
     
-    # Sidebar - Select User or Admin
-    user_type = st.sidebar.selectbox("Select Role", ["User", "Admin"])
+    # Login screen for user and admin
+    st.sidebar.title("Login")
+    login_type = st.sidebar.selectbox("Login as", ["Select role", "User", "Admin"])
+    
+    if login_type != "Select role":
+        if login_type == "User":
+            # User login form
+            st.sidebar.text_input("Username", key="user_username")
+            st.sidebar.text_input("Password", type="password", key="user_password")
+            if st.sidebar.button("Login as User"):
+                username = st.session_state.user_username
+                password = st.session_state.user_password
+                if login(username, password) == "user":
+                    st.sidebar.success("Logged in as User")
+                    # User can see webcam input and drowsiness prediction
+                    capture_and_predict()
+                else:
+                    st.sidebar.error("Invalid credentials, please try again.")
+                    
+        elif login_type == "Admin":
+            # Admin login form
+            st.sidebar.text_input("Username", key="admin_username")
+            st.sidebar.text_input("Password", type="password", key="admin_password")
+            if st.sidebar.button("Login as Admin"):
+                username = st.session_state.admin_username
+                password = st.session_state.admin_password
+                if login(username, password) == "admin":
+                    st.sidebar.success("Logged in as Admin")
+                    # Admin features can be added here
+                    st.write("Welcome Admin!")
+                    # You could allow Admin to access logs or perform actions here
+                else:
+                    st.sidebar.error("Invalid credentials, please try again.")
+    else:
+        st.write("Please select a role to log in.")
 
-    if user_type == "User":
-        st.title("Driver Drowsiness Detection - User Mode")
-        
-        # Initialize DrowsinessDetection class
-        drowsiness_detector = DrowsinessDetection()
+# Function to capture and predict drowsiness using webcam
+def capture_and_predict():
+    """Capture image from webcam and make a drowsiness prediction."""
+    # Initialize DrowsinessDetection
+    detector = DrowsinessDetection()
 
-        # Load model and feature extractor
-        model, feature_extractor = drowsiness_detector.load_model()
+    # Capture image from webcam
+    camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
+    
+    if camera_input is not None:
+        # Load and preprocess image
+        img = Image.open(camera_input)
+        inputs = preprocess_image(img, detector.feature_extractor)
 
-        # Capture image from webcam
-        camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
-        
-        if camera_input is not None:
-            # Load and preprocess image
-            img = Image.open(camera_input)
-            inputs = preprocess_image(img, feature_extractor)
+        # Get prediction
+        predicted_class_idx, prediction_score = detector.get_prediction(inputs)
 
-            # Get prediction
-            predicted_class_idx, prediction_score = get_prediction(model, inputs)
-
-            # Store the result in Pinecone
-            drowsiness_detector.store_in_pinecone(img, predicted_class_idx, prediction_score)
-
-            # Display the image and prediction result
-            display_result(img, predicted_class_idx, prediction_score)
-        
-    elif user_type == "Admin":
-        # Admin Login - Simple Username and Password
-        st.title("Admin Login")
-        
-        # Define admin credentials (you can modify this to make it dynamic, e.g., stored in a database)
-        admin_username = "admin"
-        admin_password = "password123"
-        
-        # User input for username and password
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-
-        # Check if the credentials are correct
-        if username == admin_username and password == admin_password:
-            st.write("Login successful! Welcome to the Admin Dashboard.")
-            st.write("This is the admin dashboard. You can manage the drowsiness detection model, view analytics, or perform other admin tasks.")
-            # Add additional admin functionalities here (e.g., viewing stored data, retraining model)
-        else:
-            st.write("Invalid username or password.")
+        # Display the image and prediction result
+        display_result(img, predicted_class_idx, prediction_score)
 
 if __name__ == "__main__":
     main()
