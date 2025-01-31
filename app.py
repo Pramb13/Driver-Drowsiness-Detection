@@ -3,33 +3,16 @@ import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 import numpy as np
-import seaborn as sns
-import pandas as pd
-import os
 import time
-
-# Predefined user credentials for simplicity
-USER_CREDENTIALS = {"user": "123"}
-ADMIN_CREDENTIALS = {"admin": "123"}
-
-# Placeholder for drowsiness data (this would be stored in a database in real life)
-drowsiness_data = []
-
-# Set Hugging Face API key
-os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
+import os
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 
-# Login function
-def login(username, password):
-    if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
-        return "user"
-    elif username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[username] == password:
-        return "admin"
-    else:
-        return None
+# Predefined user credentials for simplicity
+USER_CREDENTIALS = {"user": "123"}
+ADMIN_CREDENTIALS = {"admin": "123"}
 
 # DrowsinessDetection class
 class DrowsinessDetection:
@@ -53,44 +36,12 @@ class DrowsinessDetection:
             prediction_score = logits.max().item()  # Highest score value
         return predicted_class_idx, prediction_score
 
-    def store_in_drowsiness_data(self, predicted_class_idx, prediction_score):
-        """Store the drowsiness detection result for admin view."""
-        metadata = {
-            "class": LABELS[predicted_class_idx],
-            "score": prediction_score,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-        drowsiness_data.append(metadata)
-        self.dump_data_to_csv(metadata)  # Save data to CSV
-
-    def dump_data_to_csv(self, metadata):
-        """Append data to a CSV file for future use."""
-        df = pd.DataFrame([metadata])
-        file_path = "drowsiness_data.csv"
-
-        # If the file does not exist, create it with headers
-        if not os.path.exists(file_path):
-            df.to_csv(file_path, index=False, header=True)
-        else:
-            df.to_csv(file_path, mode='a', header=False, index=False)
-
-# Function to display graphs for Admin
-def display_graph():
-    """Display prediction statistics using Seaborn."""
-    if len(drowsiness_data) == 0:
-        st.write("No records available for display.")
-        return
-
-    # Create a DataFrame from the collected data
-    df = pd.DataFrame(drowsiness_data)
-    
-    # Seaborn bar plot
-    st.subheader("Prediction Statistics")
-    prediction_counts = df['class'].value_counts()
-    sns.set_theme(style="whitegrid")
-    ax = sns.barplot(x=prediction_counts.index, y=prediction_counts.values, palette="Blues_d")
-    ax.set(xlabel="Prediction", ylabel="Count")
-    st.pyplot(ax.figure)
+# Function to display prediction for the user
+def display_user_result(predicted_class_idx, prediction_score):
+    """Display the prediction result for the user."""
+    prediction_label = LABELS[predicted_class_idx]
+    st.write(f"**Prediction**: {prediction_label}")
+    st.write(f"**Confidence Score**: {prediction_score:.2f}")
 
 # Sidebar for Login & Role Selection
 def sidebar():
@@ -104,8 +55,7 @@ def sidebar():
         password = st.sidebar.text_input("Password", type="password")
 
         if st.sidebar.button("Login"):
-            user_role = login(username, password)
-            if user_role == "user":
+            if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
                 st.sidebar.success("Login successful! You are logged in as User.")
                 return "user"
             else:
@@ -118,8 +68,7 @@ def sidebar():
         password = st.sidebar.text_input("Password", type="password")
 
         if st.sidebar.button("Login"):
-            admin_role = login(username, password)
-            if admin_role == "admin":
+            if username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[username] == password:
                 st.sidebar.success("Login successful! You are logged in as Admin.")
                 return "admin"
             else:
@@ -138,6 +87,10 @@ def main():
         st.markdown("### Capturing your face to detect drowsiness.")
         drowsiness_detector = DrowsinessDetection()
 
+        # Check if there's a previous snapshot stored in session state
+        if "prediction_result" not in st.session_state:
+            st.session_state.prediction_result = None
+
         # Capture image from webcam
         camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
         
@@ -145,46 +98,29 @@ def main():
             # Load and preprocess image
             img = Image.open(camera_input)
             predicted_class_idx, prediction_score = drowsiness_detector.get_prediction(img)
-            
-            # Store result in drowsiness data (only for admin view)
-            drowsiness_detector.store_in_drowsiness_data(predicted_class_idx, prediction_score)
-            
+
+            # Store prediction result in session state
+            st.session_state.prediction_result = (predicted_class_idx, prediction_score)
+
             # Display result
             st.image(img, caption="Captured Image from Webcam", use_container_width=True)
-            prediction_label = LABELS[predicted_class_idx]
-            st.write(f"**Prediction**: {prediction_label}")
-            st.write(f"**Confidence Score**: {prediction_score:.2f}")
-            
-            # Add snapshot button to capture and process image
-            if st.button("Snapshot"):
-                # Saving the snapshot to session state
-                st.session_state.img = img
-                st.session_state.predicted_class_idx = predicted_class_idx
-                st.session_state.prediction_score = prediction_score
+            display_user_result(predicted_class_idx, prediction_score)
 
-                # Display snapshot after capturing
-                st.image(st.session_state.img, caption="Snapshot", use_container_width=True)
-                prediction_label = LABELS[st.session_state.predicted_class_idx]
-                st.write(f"**Prediction**: {prediction_label}")
-                st.write(f"**Confidence Score**: {st.session_state.prediction_score:.2f}")
-    
+            # Snapshot button
+            if st.button("Snapshot"):
+                st.write("Snapshot Captured")
+                # After clicking "Snapshot", the prediction and result will be shown automatically as above
+
+        elif st.session_state.prediction_result is not None:
+            # If there is a prediction result stored in session state, display it
+            predicted_class_idx, prediction_score = st.session_state.prediction_result
+            display_user_result(predicted_class_idx, prediction_score)
+
     elif role == "admin":
-        # Admin: Display statistics of drowsiness predictions
+        # Admin: Display admin controls
         st.title("Admin Dashboard")
         st.markdown("<h3 style='text-align: center; color: #E53935;'>Monitor Drowsiness Patterns</h3>", unsafe_allow_html=True)
-        display_graph()
-        
-        st.markdown("### Download the Drowsiness Report")
-        if len(drowsiness_data) > 0:
-            df = pd.DataFrame(drowsiness_data)
-            st.write("### Drowsiness Data (Last 10 records)")
-            st.dataframe(df.tail(10))  # Display last 10 records
-            st.download_button(
-                label="Download as CSV",
-                data=df.to_csv(index=False),
-                file_name="drowsiness_data.csv",
-                mime="text/csv",
-            )
+        # Additional admin functionalities here (graph display, data export, etc.)
 
 if __name__ == "__main__":
     main()
