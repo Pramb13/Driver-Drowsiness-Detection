@@ -20,7 +20,7 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Initialize Pinecone
+# Initialize Pinecone (simplified)
 def initialize_pinecone():
     """Initialize Pinecone connection."""
     if not PINECONE_API_KEY:
@@ -28,9 +28,8 @@ def initialize_pinecone():
         return None
     
     pinecone.init(api_key=PINECONE_API_KEY, environment="us-east1")  # Change environment if needed
-    if INDEX_NAME not in pinecone.list_indexes():
-        pinecone.create_index(INDEX_NAME, dimension=768)  # Dimension should match model output
     
+    # Directly return the existing index (no check or creation of index)
     return pinecone.Index(INDEX_NAME)
 
 # Store data in Pinecone
@@ -90,7 +89,7 @@ def main():
     # Load model and feature extractor
     model, feature_extractor = load_model()
 
-    # Initialize Pinecone index
+    # Initialize Pinecone index (without index creation)
     index = initialize_pinecone()
     if not index:
         return  # Stop the app if Pinecone initialization fails
