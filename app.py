@@ -19,8 +19,7 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
 pinecone_environment = st.secrets["pinecone"]["environment"]
 
-# Correctly initialize Pinecone
-pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
+
 
 # Create the index if it doesn't exist
 if INDEX_NAME not in pinecone.list_indexes():
