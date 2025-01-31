@@ -4,9 +4,7 @@ from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 import pinecone
 import numpy as np
-from sentence_transformers import SentenceTransformer
 import os
-import time
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
@@ -16,7 +14,8 @@ LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 PINECONE_API_KEY = st.secrets["pinecone"]["api_key"]  # Secure access to the Pinecone API key
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
 
-# Initialize the model and feature extractor
+# Initialize the model and feature extractor (load once globally)
+@st.cache_resource
 def load_model():
     """Load pre-trained model and feature extractor."""
     model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
@@ -35,11 +34,8 @@ def initialize_pinecone():
     return pinecone.Index(INDEX_NAME)
 
 # Store data in Pinecone
-def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
+def store_in_pinecone(index, feature_vector, predicted_class_idx, prediction_score):
     """Store image prediction data in Pinecone."""
-    # Convert image to a feature vector using the model's feature extractor
-    feature_vector = extract_image_features(image)  # Extract image features from model
-
     # Prepare the metadata for the image
     metadata = {
         "class": LABELS[predicted_class_idx],
@@ -52,22 +48,14 @@ def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     # Upsert the vector and metadata into Pinecone
     index.upsert([(vector_id, feature_vector.tolist(), metadata)])
 
-def extract_image_features(image):
+def extract_image_features(image, model, feature_extractor):
     """Extract features from the image using the model's feature extractor."""
-    model, feature_extractor = load_model()
     inputs = feature_extractor(images=image, return_tensors="pt")
     with torch.no_grad():
         outputs = model(**inputs)
         feature_vector = outputs.logits  # Raw features from the model (logits)
         feature_vector = feature_vector.squeeze().cpu().numpy()  # Ensure it's a 1D numpy array
     return feature_vector  # Return the numpy array
-
-# Preprocess image for the model
-def preprocess_image(image, feature_extractor):
-    """Preprocess the image for model prediction."""
-    image = image.convert("RGB")
-    inputs = feature_extractor(images=image, return_tensors="pt")
-    return inputs
 
 # Make prediction using the model
 def get_prediction(model, inputs):
@@ -101,18 +89,24 @@ def main():
     camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
     
     if camera_input is not None:
-        # Load and preprocess image
-        img = Image.open(camera_input)
-        inputs = preprocess_image(img, feature_extractor)
+        try:
+            # Load and preprocess image
+            img = Image.open(camera_input)
 
-        # Get prediction
-        predicted_class_idx, prediction_score = get_prediction(model, inputs)
+            # Extract image features (using feature extractor)
+            feature_vector = extract_image_features(img, model, feature_extractor)
 
-        # Store the result in Pinecone
-        store_in_pinecone(index, img, predicted_class_idx, prediction_score)
+            # Get prediction
+            predicted_class_idx, prediction_score = get_prediction(model, feature_vector)
 
-        # Display the image and prediction result
-        display_result(img, predicted_class_idx, prediction_score)
+            # Store the result in Pinecone
+            store_in_pinecone(index, feature_vector, predicted_class_idx, prediction_score)
+
+            # Display the image and prediction result
+            display_result(img, predicted_class_idx, prediction_score)
+
+        except Exception as e:
+            st.error(f"Error processing the image: {str(e)}")
 
 if __name__ == "__main__":
     main()
