@@ -26,17 +26,7 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Pinecone client handler
-class PineconeHandler:
-    def __init__(self, api_key, index_name, environment):
-        self.api_key = api_key
-        self.index_name = index_name
-        self.environment = environment
-        self.pc = None
-        self.index = None
-        self.initialize()
-
-    def initialize(self):
+ def initialize(self):
         """Initialize Pinecone client and create the index if it doesn't exist."""
         # Initialize Pinecone client
         pinecone.init(api_key=self.api_key, environment=self.environment)
