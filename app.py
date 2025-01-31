@@ -1,134 +1,67 @@
 import streamlit as st
-import cv2
-import numpy as np
+import torch
+from transformers import AutoModelForImageClassification, AutoFeatureExtractor
+from PIL import Image
 import time
-import pinecone
-import dlib
-from imutils import face_utils
-import os
 
-# Initialize Pinecone API
-PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
-pinecone.init(api_key=PINECONE_API_KEY, environment="us-east1-gcp")  # Initialize Pinecone client
+# Constants
+MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
+LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 
-# Drowsiness Detection Parameters
-EAR_THRESHOLD = 0.3  # Eye aspect ratio threshold for drowsiness detection
-EYE_AR_CONSEC_FRAMES = 48  # Number of frames to indicate drowsiness
+# Initialize the model and feature extractor
+def load_model():
+    """Load pre-trained model and feature extractor."""
+    model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
+    feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
+    return model, feature_extractor
 
-# Load dlib's face detector and facial landmark predictor
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")  # Download from dlib model
+# Preprocess image for the model
+def preprocess_image(image, feature_extractor):
+    """Preprocess the image for model prediction."""
+    image = image.convert("RGB")
+    inputs = feature_extractor(images=image, return_tensors="pt")
+    return inputs
 
-# Function to calculate the Eye Aspect Ratio (EAR)
-def eye_aspect_ratio(eye):
-    A = np.linalg.norm(eye[1] - eye[5])
-    B = np.linalg.norm(eye[2] - eye[4])
-    C = np.linalg.norm(eye[0] - eye[3])
-    ear = (A + B) / (2.0 * C)
-    return ear
+# Make prediction using the model
+def get_prediction(model, inputs):
+    """Make a prediction using the model and return the predicted class and confidence."""
+    with torch.no_grad():
+        outputs = model(**inputs)
+        logits = outputs.logits  # Get the raw prediction scores
+        predicted_class_idx = torch.argmax(logits, dim=-1).item()
+        prediction_score = logits.max().item()  # Highest score value
+    return predicted_class_idx, prediction_score
 
-# Create Pinecone index
-index_name = "driver-drowsiness"
-if index_name not in pinecone.list_indexes():
-    pinecone.create_index(
-        name=index_name,
-        dimension=384,  # Dimension of embeddings, can be modified
-        metric='cosine'
-    )
+# Display the image and prediction result
+def display_result(image, predicted_class_idx, prediction_score):
+    """Display the image along with the prediction result."""
+    st.image(image, caption="Captured Image from Webcam", use_container_width=True)
+    prediction_label = LABELS[predicted_class_idx]
+    st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
 
-# Create an index instance
-index = pinecone.Index(index_name)
-
-class DrowsinessDetection:
-    def __init__(self):
-        self.drowsy_frame_count = 0
-        self.drowsy = False
-
-    def detect_drowsiness(self, frame):
-        # Convert to grayscale
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = detector(gray, 0)
-
-        for face in faces:
-            # Get facial landmarks
-            shape = predictor(gray, face)
-            shape = face_utils.shape_to_np(shape)
-
-            # Get the coordinates of the left and right eyes
-            left_eye = shape[42:48]
-            right_eye = shape[36:42]
-
-            # Calculate the EAR for both eyes
-            left_ear = eye_aspect_ratio(left_eye)
-            right_ear = eye_aspect_ratio(right_eye)
-
-            # Compute the average EAR
-            ear = (left_ear + right_ear) / 2.0
-
-            # Check if EAR is below threshold
-            if ear < EAR_THRESHOLD:
-                self.drowsy_frame_count += 1
-                if self.drowsy_frame_count >= EYE_AR_CONSEC_FRAMES:
-                    self.drowsy = True
-            else:
-                self.drowsy_frame_count = 0
-                self.drowsy = False
-
-        return self.drowsy
-
-    def store_in_pinecone(self, drowsy_state, frame):
-        # Generate embeddings (mock embeddings for now, you can use actual face embeddings)
-        embedding = np.random.rand(384).tolist()  # Mock embeddings
-        metadata = {"drowsy_state": drowsy_state, "timestamp": time.time()}
-
-        upsert_data = [
-            ("drowsy_state", embedding, metadata)
-        ]
-
-        try:
-            response = index.upsert(vectors=upsert_data)
-            st.write(f"Upsert response: {response}")
-        except Exception as e:
-            st.error(f"Error during Pinecone upsert: {str(e)}")
-
-# Main function
+# Main Streamlit interface
 def main():
-    st.title("Driver Drowsiness Detection System")
-    st.write("Detect whether the driver is drowsy based on their eye movements.")
+    """Main function to handle Streamlit interface and prediction process."""
+    # Load model and feature extractor
+    model, feature_extractor = load_model()
 
-    # Start webcam feed
-    cap = cv2.VideoCapture(0)
-    drowsiness_detector = DrowsinessDetection()
+    # Capture image from webcam (loop)
+    camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
+    
+    while True:
+        if camera_input is not None:
+            # Load and preprocess image
+            img = Image.open(camera_input)
+            inputs = preprocess_image(img, feature_extractor)
 
-    while cap.isOpened():
-        ret, frame = cap.read()
+            # Get prediction
+            predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
-        if not ret:
-            break
+            # Display the image and prediction result
+            display_result(img, predicted_class_idx, prediction_score)
 
-        # Detect drowsiness in the current frame
-        is_drowsy = drowsiness_detector.detect_drowsiness(frame)
+            # Pause between frames to control frame rate
+            time.sleep(0.1)
 
-        # Show the result on the frame
-        if is_drowsy:
-            cv2.putText(frame, "Drowsy!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        else:
-            cv2.putText(frame, "Alert", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-        # Display the frame using OpenCV
-        cv2.imshow('Frame', frame)
-
-        # If drowsiness detected, store the result in Pinecone
-        if is_drowsy:
-            drowsiness_detector.store_in_pinecone("Drowsy", frame)
-
-        # Break the loop if 'q' is pressed
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-# Run the Streamlit app
 if __name__ == "__main__":
     main()
