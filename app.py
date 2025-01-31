@@ -4,6 +4,8 @@ import pandas as pd
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 import time
+import cv2
+import numpy as np
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"
@@ -47,6 +49,24 @@ def get_prediction(model, inputs):
         st.error(f"Prediction error: {e}")
         return None, None
 
+def detect_eye_closure(image):
+    # Convert to grayscale for facial landmarks detection
+    gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
+    
+    # Load OpenCV pre-trained face and eye detector models
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_eye.xml")
+
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+    for (x, y, w, h) in faces:
+        roi_gray = gray[y:y+h, x:x+w]
+        eyes = eye_cascade.detectMultiScale(roi_gray)
+        
+        # If eyes are not detected, assume drowsy (eyes closed)
+        if len(eyes) == 0:
+            return True  # Eyes closed
+    return False  # Eyes open
+
 def display_result(image, predicted_class_idx, prediction_score):
     st.image(image, caption="Captured Image from Webcam", use_container_width=True)
     if predicted_class_idx is not None:
@@ -89,12 +109,20 @@ def main():
             with st.spinner("Processing..."):
                 time.sleep(1)
                 img = Image.open(camera_input)
-                inputs = preprocess_image(img, feature_extractor)
-                predicted_class_idx, prediction_score = get_prediction(model, inputs)
-                display_result(img, predicted_class_idx, prediction_score)
+                
+                # Check for eye closure before model prediction
+                if detect_eye_closure(img):
+                    st.write("Eyes are closed! You may be drowsy.")
+                    prediction_label = "Drowsy"
+                    prediction_score = 0.85  # Assume high confidence for eye closure
+                    display_result(img, 1, prediction_score)
+                else:
+                    inputs = preprocess_image(img, feature_extractor)
+                    predicted_class_idx, prediction_score = get_prediction(model, inputs)
+                    display_result(img, predicted_class_idx, prediction_score)
     else:
         st.title("Admin Dashboard")
-        st.write("Below are the recorded predictions:")
+        st.write("Below are the recorded predictions: ")
         if st.session_state["predictions"]:
             df = pd.DataFrame(st.session_state["predictions"])
             st.dataframe(df)
