@@ -19,12 +19,12 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
 pinecone_environment = st.secrets["pinecone"]["environment"]
 
-# Initialize Pinecone client
-pc = pinecone.Client(api_key=PINECONE_API_KEY, environment=pinecone_environment)
+# Correctly initialize Pinecone
+pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
 
 # Create the index if it doesn't exist
-if INDEX_NAME not in pc.list_indexes():
-    pc.create_index(
+if INDEX_NAME not in pinecone.list_indexes():
+    pinecone.create_index(
         name=INDEX_NAME,
         dimension=384,  # Ensure this matches the vector size
         metric='cosine',  # Using cosine distance for vector similarity
@@ -34,7 +34,7 @@ else:
     st.write(f"Index '{INDEX_NAME}' already exists.")
 
 # Access the index
-index = pc.Index(INDEX_NAME)
+index = pinecone.Index(INDEX_NAME)
 
 # Initialize the model and feature extractor
 def load_model():
