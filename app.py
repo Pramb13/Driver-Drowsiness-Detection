@@ -11,15 +11,14 @@ MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 
 # Pinecone Initialization
-INDEX_NAME = "imageembeddings"
 
 # Initialize Pinecone index
 def create_pinecone_index():
     """Create Pinecone index if it doesn't exist."""
     if INDEX_NAME not in pinecone.list_indexes():
         pinecone.create_index(
-            INDEX_NAME,
-            dimension=768,  # This depends on your embeddings' dimension
+            INDEX_NAME = "imageembeddings",
+            dimension=1024,  # This depends on your embeddings' dimension
             metric="cosine"
         )
     return pinecone.Index(INDEX_NAME)
