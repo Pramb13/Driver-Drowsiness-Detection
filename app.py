@@ -2,16 +2,21 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-from datetime import datetime
-import os
-import pandas as pd
-import pygame  # Use pygame for audio playback
+import pymongo
+from bson import Binary
+import io
+
+# Access MongoDB URI from Streamlit secrets
+MONGO_URI = st.secrets["mongo"]["uri"]
+
+# MongoDB Connection
+client = pymongo.MongoClient(MONGO_URI)
+db = client.get_database()  # Get the default database
+collection = db.predictions  # Replace with your desired collection name
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
-HISTORY_FILE = "drowsiness_history.csv"  # File to track drowsiness history
-ALERT_SOUND_PATH = "audio_alert.wav"  # Path to your alert sound file (replace with actual file)
 
 # Initialize the model and feature extractor
 def load_model():
@@ -37,64 +42,37 @@ def get_prediction(model, inputs):
         prediction_score = logits.max().item()  # Highest score value
     return predicted_class_idx, prediction_score
 
-# Get the current time in a human-readable format
-def get_current_time():
-    """Return the current time in a readable format."""
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return current_time
+# Save the result to MongoDB
+def save_to_mongo(image, predicted_class_idx, prediction_score):
+    """Save the image and prediction results to MongoDB."""
+    # Convert image to binary for storage
+    byte_io = io.BytesIO()
+    image.save(byte_io, format="PNG")
+    image_binary = byte_io.getvalue()
 
-# Play an alert sound when drowsiness is detected using pygame
-def play_alert():
-    """Play an alert sound when drowsiness is detected."""
-    if os.path.exists(ALERT_SOUND_PATH):
-        try:
-            pygame.mixer.init()  # Initialize pygame mixer for sound playback
-            pygame.mixer.music.load(ALERT_SOUND_PATH)  # Load the audio file
-            pygame.mixer.music.play()  # Play the sound
-            print("Alert sound is playing...")
-        except Exception as e:
-            print(f"Error while playing the sound: {e}")
-    else:
-        print("Alert sound file not found!")
+    # Document to insert
+    document = {
+        "image": Binary(image_binary),
+        "prediction_label": LABELS[predicted_class_idx],
+        "confidence": prediction_score,
+        "timestamp": st.timestamp()  # Add a timestamp for the record
+    }
 
-# Save drowsiness event to history file
-def save_to_history(prediction, confidence, current_time):
-    """Save drowsiness prediction to history CSV file."""
-    if not os.path.exists(HISTORY_FILE):
-        df = pd.DataFrame(columns=["Time", "Prediction", "Confidence"])
-        df.to_csv(HISTORY_FILE, index=False)
-    
-    new_data = pd.DataFrame([[current_time, prediction, confidence]], columns=["Time", "Prediction", "Confidence"])
-    new_data.to_csv(HISTORY_FILE, mode='a', header=False, index=False)
+    # Insert into MongoDB
+    collection.insert_one(document)
 
 # Display the image and prediction result
-def display_result(image, predicted_class_idx, prediction_score, current_time):
-    """Display the image along with the prediction result and time."""
+def display_result(image, predicted_class_idx, prediction_score):
+    """Display the image along with the prediction result."""
     st.image(image, caption="Captured Image from Webcam", use_container_width=True)
     prediction_label = LABELS[predicted_class_idx]
     st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
-    st.write(f"Prediction made at: {current_time}")
-
-# Display history of drowsiness events
-def display_history():
-    """Display history of drowsiness events."""
-    if os.path.exists(HISTORY_FILE):
-        df = pd.read_csv(HISTORY_FILE)
-        st.write("Drowsiness History:")
-        st.dataframe(df)
 
 # Main Streamlit interface
 def main():
     """Main function to handle Streamlit interface and prediction process."""
     # Load model and feature extractor
     model, feature_extractor = load_model()
-
-    # Display title and description
-    st.title("Real-Time Drowsiness Detection")
-    st.markdown("""
-        This app uses your webcam feed to detect signs of drowsiness. If drowsiness is detected, an alert will be triggered.
-        The history of your drowsiness events will be tracked.
-    """)
 
     # Capture image from webcam
     camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
@@ -107,22 +85,11 @@ def main():
         # Get prediction
         predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
-        # Get current time
-        current_time = get_current_time()
+        # Save the result to MongoDB
+        save_to_mongo(img, predicted_class_idx, prediction_score)
 
-        # Display the result
-        display_result(img, predicted_class_idx, prediction_score, current_time)
-
-        # If drowsy, play sound alert and save to history
-        if predicted_class_idx == 1:
-            play_alert()
-
-        # Save the event to the history file
-        save_to_history(LABELS[predicted_class_idx], prediction_score, current_time)
-
-    # Display drowsiness history
-    if st.button("Show Drowsiness History"):
-        display_history()
+        # Display the image and prediction result
+        display_result(img, predicted_class_idx, prediction_score)
 
 if __name__ == "__main__":
     main()
