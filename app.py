@@ -60,7 +60,6 @@ def display_result(image, predicted_class_idx, prediction_score):
 
 # Main Streamlit interface
 def main():
-    """Main function to handle Streamlit interface and prediction process.""
 
     # Load model and feature extractor
     model, feature_extractor = load_model()
