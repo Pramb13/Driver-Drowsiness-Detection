@@ -4,6 +4,9 @@ from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 import pinecone
 import numpy as np
+from sentence_transformers import SentenceTransformer
+import os
+import time
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
@@ -12,7 +15,6 @@ LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 # Fetch Pinecone API key and index name securely from Streamlit secrets
 PINECONE_API_KEY = st.secrets["pinecone"]["api_key"]  # Secure access to the Pinecone API key
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
-index = INDEX_NAME
 
 # Initialize the model and feature extractor
 def load_model():
@@ -21,10 +23,21 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
+# Initialize Pinecone (simplified)
+def initialize_pinecone():
+    """Initialize Pinecone connection."""
+    if not PINECONE_API_KEY:
+        st.error("Pinecone API key not set!")
+        return None
+    
+    pinecone.init(api_key=PINECONE_API_KEY, environment="us-east1")  # Change environment if needed
+    # Directly return the existing index (no check or creation of index)
+    return pinecone.Index(INDEX_NAME)
+
 # Store data in Pinecone
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     """Store image prediction data in Pinecone."""
-    # Convert image to a vector (using feature extractor or model)
+    # Convert image to a feature vector using the model's feature extractor
     feature_vector = extract_image_features(image)  # Extract image features from model
 
     # Prepare the metadata for the image
@@ -45,8 +58,9 @@ def extract_image_features(image):
     inputs = feature_extractor(images=image, return_tensors="pt")
     with torch.no_grad():
         outputs = model(**inputs)
-        feature_vector = outputs.logits  # Raw features from the model
-    return feature_vector.squeeze().numpy()  # Convert to numpy array
+        feature_vector = outputs.logits  # Raw features from the model (logits)
+        feature_vector = feature_vector.squeeze().cpu().numpy()  # Ensure it's a 1D numpy array
+    return feature_vector  # Return the numpy array
 
 # Preprocess image for the model
 def preprocess_image(image, feature_extractor):
@@ -77,6 +91,11 @@ def main():
     """Main function to handle Streamlit interface and prediction process."""
     # Load model and feature extractor
     model, feature_extractor = load_model()
+
+    # Initialize Pinecone index (without index creation)
+    index = initialize_pinecone()
+    if not index:
+        return  # Stop the app if Pinecone initialization fails
 
     # Capture image from webcam
     camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
