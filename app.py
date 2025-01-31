@@ -2,9 +2,9 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-from pinecone import Pinecone as PineconeClient
 import numpy as np
 import os
+from pinecone import Pinecone as PineconeClient
 
 # Set Hugging Face API key and Pinecone API key from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
@@ -21,7 +21,7 @@ pinecone_environment = st.secrets["pinecone"]["environment"]
 
 # Pinecone Setup for text embedding
 def setup_pinecone_index():
-    """Initialize Pinecone index for text embeddings."""
+    """Initialize Pinecone index for image embeddings."""
     pc = PineconeClient(api_key=PINECONE_API_KEY)
     index_name = "textembedding"
     
@@ -29,7 +29,7 @@ def setup_pinecone_index():
     if index_name not in pc.list_indexes().names():
         pc.create_index(
             name=index_name,
-            dimension=1024,
+            dimension=1024,  # Matching the dimension of the Pinecone index
             metric='cosine',
         )
         st.write(f"Index '{index_name}' created.")
@@ -49,7 +49,10 @@ def load_model():
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     """Store image prediction data in Pinecone."""
     feature_vector = extract_image_features(image)  # Extract image features
-
+    
+    # Debugging print
+    print(f"Feature vector shape: {feature_vector.shape}")  # Check if the shape is correct
+    
     # Prepare metadata and generate unique vector ID
     metadata = {
         "class": LABELS[predicted_class_idx],
@@ -65,11 +68,15 @@ def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     }
 
     # Upsert the vector into the Pinecone index
-    upsert_response = index.upsert(
-        vectors=[vector],
-        namespace="ns1"  # Using "ns1" as the namespace
-    )
-    st.write(f"Upserted data with ID: {vector_id}")
+    try:
+        upsert_response = index.upsert(
+            vectors=[vector],
+            namespace="ns1"  # Using "ns1" as the namespace
+        )
+        st.write(f"Upserted data with ID: {vector_id}")
+    except Exception as e:
+        st.write(f"Error while upserting data: {str(e)}")  # Catch the error and print it
+        print(f"Error during upsert: {str(e)}")  # For detailed error logging
     return upsert_response
 
 # Extract image features for embedding
@@ -81,6 +88,11 @@ def extract_image_features(image):
         outputs = model(**inputs)
         feature_vector = outputs.logits  # Raw features from the model (logits)
         feature_vector = feature_vector.squeeze().cpu().numpy()  # Ensure it's a 1D numpy array
+        # Ensure that the dimension matches Pinecone index dimension (1024)
+        if feature_vector.shape[0] != 1024:
+            # Here you can adjust the vector size to match Pinecone dimension if needed
+            # A typical approach would be to use a model that generates the correct dimension
+            raise ValueError(f"Feature vector has incorrect dimension. Expected 1024, got {feature_vector.shape[0]}")
     return feature_vector  # Return the numpy array
 
 # Preprocess image for the model
@@ -110,10 +122,10 @@ def display_result(image, predicted_class_idx, prediction_score):
 # Main Streamlit interface
 def main():
     """Main function to handle Streamlit interface and prediction process."""
-    # Setup Pinecone index for text embedding
-    text_index = setup_pinecone_index()
+    # Set up Pinecone index
+    index = setup_pinecone_index()
 
-    # Load model and feature extractor for image classification
+    # Load model and feature extractor
     model, feature_extractor = load_model()
 
     # Capture image from webcam
@@ -128,7 +140,7 @@ def main():
         predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
         # Store the result in Pinecone
-        store_in_pinecone(text_index, img, predicted_class_idx, prediction_score)
+        store_in_pinecone(index, img, predicted_class_idx, prediction_score)
 
         # Display the image and prediction result
         display_result(img, predicted_class_idx, prediction_score)
