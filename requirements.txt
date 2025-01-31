@@ -1,6 +1,5 @@
-opencv-python
-numpy
 streamlit
-keras
-tensorflow
-h5py
+torch
+transformers
+torchvision
+pillow
