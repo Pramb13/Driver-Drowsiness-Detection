@@ -22,24 +22,27 @@ pinecone_environment = st.secrets["pinecone"]["environment"]
 class DrowsinessDetection:
     def __init__(self):
         """Initialize Pinecone client and ensure the index exists"""
-        self.index_name = "imageembedding"  # Your Pinecone index name
+        try:
+            self.index_name = "imageembedding"  # Your Pinecone index name
 
-        # Initialize Pinecone client
-        pinecone.init(api_key=os.getenv('PINECONE_API_KEY'), environment=pinecone_environment)
+            # Initialize Pinecone client
+            pinecone.init(api_key=os.getenv('PINECONE_API_KEY'), environment=pinecone_environment)
 
-        # Check if index exists; create if not
-        if self.index_name not in pinecone.list_indexes():
-            pinecone.create_index(
-                name=self.index_name,
-                dimension=1024,  # Ensure this matches the vector size
-                metric='cosine',  # Using cosine distance for vector similarity
-            )
-            st.write(f"Index '{self.index_name}' created.")
-        else:
-            st.write(f"Index '{self.index_name}' already exists.")
+            # Check if index exists; create if not
+            if self.index_name not in pinecone.list_indexes():
+                pinecone.create_index(
+                    name=self.index_name,
+                    dimension=384,  # Ensure this matches the vector size
+                    metric='cosine',  # Using cosine distance for vector similarity
+                )
+                st.write(f"Index '{self.index_name}' created.")
+            else:
+                st.write(f"Index '{self.index_name}' already exists.")
 
-        # Access the index
-        self.index = pinecone.Index(self.index_name)
+            # Access the index
+            self.index = pinecone.Index(self.index_name)
+        except Exception as e:
+            st.write(f"Error initializing Pinecone: {e}")
 
     def store_in_pinecone(self, image, predicted_class_idx, prediction_score):
         """Store image prediction data in Pinecone."""
@@ -110,28 +113,31 @@ def display_result(image, predicted_class_idx, prediction_score):
 # Main Streamlit interface
 def main():
     """Main function to handle Streamlit interface and prediction process."""
-    # Initialize DrowsinessDetection class
-    drowsiness_detector = DrowsinessDetection()
+    try:
+        # Initialize DrowsinessDetection class
+        drowsiness_detector = DrowsinessDetection()
 
-    # Load model and feature extractor
-    model, feature_extractor = drowsiness_detector.load_model()
+        # Load model and feature extractor
+        model, feature_extractor = drowsiness_detector.load_model()
 
-    # Capture image from webcam
-    camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
-    
-    if camera_input is not None:
-        # Load and preprocess image
-        img = Image.open(camera_input)
-        inputs = preprocess_image(img, feature_extractor)
+        # Capture image from webcam
+        camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
+        
+        if camera_input is not None:
+            # Load and preprocess image
+            img = Image.open(camera_input)
+            inputs = preprocess_image(img, feature_extractor)
 
-        # Get prediction
-        predicted_class_idx, prediction_score = get_prediction(model, inputs)
+            # Get prediction
+            predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
-        # Store the result in Pinecone
-        drowsiness_detector.store_in_pinecone(img, predicted_class_idx, prediction_score)
+            # Store the result in Pinecone
+            drowsiness_detector.store_in_pinecone(img, predicted_class_idx, prediction_score)
 
-        # Display the image and prediction result
-        display_result(img, predicted_class_idx, prediction_score)
+            # Display the image and prediction result
+            display_result(img, predicted_class_idx, prediction_score)
+    except Exception as e:
+        st.write(f"An error occurred in the main function: {e}")
 
 if __name__ == "__main__":
     main()
