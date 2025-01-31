@@ -9,8 +9,8 @@ import os
 import time
 
 # Predefined user credentials for simplicity
-USER_CREDENTIALS = {"user": "123"}
-ADMIN_CREDENTIALS = {"admin": "123"}
+USER_CREDENTIALS = {"user": "user_password"}
+ADMIN_CREDENTIALS = {"admin": "admin_password"}
 
 # Placeholder for drowsiness data (this would be stored in a database in real life)
 drowsiness_data = []
@@ -154,6 +154,11 @@ def main():
             prediction_label = LABELS[predicted_class_idx]
             st.write(f"**Prediction**: {prediction_label}")
             st.write(f"**Confidence Score**: {prediction_score:.2f}")
+            
+            # Add snapshot button to capture and process image
+            if st.button("Snapshot"):
+                st.write("Snapshot Captured")
+                # After clicking "Snapshot", prediction and result will be shown automatically as above
     
     elif role == "admin":
         # Admin: Display statistics of drowsiness predictions
