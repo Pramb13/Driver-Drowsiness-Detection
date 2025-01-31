@@ -25,8 +25,6 @@ class DrowsinessDetection:
     def __init__(self):
         # Initialize Pinecone connection
         self.index_name = INDEX_NAME  # Index name from Streamlit secrets
-        self.pc = PineconeClient.Client(api_key=PINECONE_API_KEY, environment=pinecone_environment)
-
         # Check if the index exists, create if it doesn't
         if self.index_name not in self.pc.list_indexes().names():
             self.pc.create_index(
