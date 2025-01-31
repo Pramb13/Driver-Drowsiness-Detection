@@ -11,8 +11,7 @@ MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 
 # Pinecone Initialization
-pinecone.init(api_key="YOUR_PINECONE_API_KEY", environment="us-west1-gcp")  # Replace with your Pinecone API key and environment
-INDEX_NAME = "drowsiness-detection"
+INDEX_NAME = "imageembeddings"
 
 # Initialize Pinecone index
 def create_pinecone_index():
