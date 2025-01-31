@@ -2,26 +2,21 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-import time
 import pinecone
 import numpy as np
+from sklearn.preprocessing import normalize
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 
-# Pinecone Initialization
+# Initialize Pinecone
+PINECONE_API_KEY = "your_pinecone_api_key"
+PINECONE_ENVIRONMENT = "us-east-1"  # or your environment region
+INDEX_NAME = "imageembedding"  # The name of your Pinecone index
 
-# Initialize Pinecone index
-def create_pinecone_index():
-    """Create Pinecone index if it doesn't exist."""
-    if INDEX_NAME not in pinecone.list_indexes():
-        pinecone.create_index(
-            INDEX_NAME = "imageembeddings",
-            dimension=1024,  # This depends on your embeddings' dimension
-            metric="cosine"
-        )
-    return pinecone.Index(INDEX_NAME)
+pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+index = pinecone.Index(INDEX_NAME)  # Connect to your index
 
 # Initialize the model and feature extractor
 def load_model():
@@ -30,39 +25,32 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Preprocess image for the model
+# Preprocess image for the model and generate embeddings
 def preprocess_image(image, feature_extractor):
     """Preprocess the image for model prediction."""
     image = image.convert("RGB")
     inputs = feature_extractor(images=image, return_tensors="pt")
     return inputs
 
-# Make prediction using the model
-def get_prediction(model, inputs):
-    """Make a prediction using the model and return the predicted class and confidence."""
+def get_image_embedding(model, inputs):
+    """Generate image embedding using the model."""
     with torch.no_grad():
-        outputs = model(**inputs)
-        logits = outputs.logits  # Get the raw prediction scores
-        predicted_class_idx = torch.argmax(logits, dim=-1).item()
-        prediction_score = logits.max().item()  # Highest score value
-    return predicted_class_idx, prediction_score
+        outputs = model.get_input_embeddings()(inputs['pixel_values'])
+        embeddings = outputs.mean(dim=1)  # Get the average of the embeddings
+    return embeddings.squeeze().cpu().numpy()
 
-# Store predictions in Pinecone
-def store_in_pinecone(index, predicted_class_idx, prediction_score, image):
-    """Store predictions in Pinecone."""
-    # Convert image to a vector/embedding (or you can use the model output as a vector)
-    # For simplicity, we'll use prediction score as the embedding (normally, you'd generate embeddings using a feature extractor)
-    embedding = np.array([prediction_score])  # Convert score to numpy array (you can adjust this logic)
-    
-    # Create metadata (store more info as needed)
-    metadata = {"prediction": LABELS[predicted_class_idx], "score": prediction_score}
-    
-    # Generate unique ID for this prediction (e.g., based on timestamp)
-    id = f"prediction-{int(time.time())}"
-    
-    # Upsert to Pinecone
-    upsert_response = index.upsert(vectors=[(id, embedding.tolist(), metadata)])
-    return upsert_response
+# Add image embedding to Pinecone
+def add_embedding_to_pinecone(embedding, image_id):
+    """Add image embedding to Pinecone index."""
+    embedding = normalize([embedding])[0]  # Normalize the embedding for Pinecone
+    index.upsert(vectors=[(image_id, embedding)])
+
+# Search Pinecone for similar image embeddings
+def search_similar_embeddings(query_embedding, top_k=3):
+    """Search for similar embeddings in Pinecone."""
+    query_embedding = normalize([query_embedding])[0]
+    result = index.query([query_embedding], top_k=top_k)
+    return result
 
 # Display the image and prediction result
 def display_result(image, predicted_class_idx, prediction_score):
@@ -77,9 +65,6 @@ def main():
     # Load model and feature extractor
     model, feature_extractor = load_model()
 
-    # Create Pinecone index
-    index = create_pinecone_index()
-
     # Capture image from webcam
     camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
     
@@ -88,15 +73,25 @@ def main():
         img = Image.open(camera_input)
         inputs = preprocess_image(img, feature_extractor)
 
-        # Get prediction
+        # Get image embedding
+        embedding = get_image_embedding(model, inputs)
+
+        # Add image embedding to Pinecone (if you want to store it)
+        image_id = "unique_image_id"  # Generate a unique image ID or use timestamp
+        add_embedding_to_pinecone(embedding, image_id)
+
+        # Get prediction (optional, depending on your model)
         predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
         # Display the image and prediction result
         display_result(img, predicted_class_idx, prediction_score)
 
-        # Store prediction result in Pinecone
-        upsert_response = store_in_pinecone(index, predicted_class_idx, prediction_score, img)
-        st.write(f"Pinecone upsert response: {upsert_response}")
+        # Search for similar images (optional, for demonstration)
+        similar_results = search_similar_embeddings(embedding)
+        st.write("Similar Images Found in Pinecone:")
+        for result in similar_results['matches']:
+            st.write(f"ID: {result['id']}, Score: {result['score']}")
 
 if __name__ == "__main__":
     main()
+
