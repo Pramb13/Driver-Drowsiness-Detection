@@ -24,7 +24,6 @@ class DrowsinessDetection:
         """Initialize Pinecone client and ensure the index exists"""
         try:
             self.index_name = "imageembedding"  # Your Pinecone index name
-            st.write("Initializing Pinecone client...")  # Debugging log
 
             # Initialize Pinecone client
             pinecone.init(api_key=os.getenv('PINECONE_API_KEY'), environment=pinecone_environment)
