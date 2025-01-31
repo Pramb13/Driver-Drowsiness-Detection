@@ -2,7 +2,7 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-import pinecone  # Correct import for Pinecone client
+from pinecone import Pinecone as PineconeClient
 import numpy as np
 import os
 
@@ -19,23 +19,23 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
 pinecone_environment = st.secrets["pinecone"]["environment"]
 
+def __init__(self, pdf_file):
+        self.index_name = "textembedding"
+        self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
 
-# Create the index if it doesn't exist
-if INDEX_NAME not in pinecone.list_indexes():
-    # Create the index if it doesn't exist
-    pinecone.create_index(
-        name=INDEX_NAME,
-        dimension=384,  # Ensure this matches the vector size
-        metric='cosine',  # Using cosine distance for vector similarity
-    )
-    st.write(f"Index '{INDEX_NAME}' created.")
-else:
-    st.write(f"Index '{INDEX_NAME}' already exists.")
+        if self.index_name not in self.pc.list_indexes().names():
+            self.pc.create_index(
+                name=self.index_name,
+                dimension=384,
+                metric='cosine',
+            )
+            st.write(f"Index '{self.index_name}' created.")
+        else:
+            st.write(f"Index '{self.index_name}' already exists.")
 
-# Access the index
-index = pinecone.Index(INDEX_NAME)
+        self.index = self.pc.Index(self.index_name)
+        index = pinecone.Index(INDEX_NAME)
 
-# Initialize the model and feature extractor
 def load_model():
     """Load pre-trained model and feature extractor."""
     model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
