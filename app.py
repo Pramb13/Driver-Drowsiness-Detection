@@ -35,13 +35,12 @@ def initialize_pinecone():
     # Fetch Pinecone environment from Streamlit secrets
     pinecone_environment = st.secrets["pinecone"]["environment"]  # Get environment from secrets
     
-    # Initialize Pinecone
+    # Initialize Pinecone client using the new approach
     pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
     
     # Access the Pinecone index
     index = pinecone.Index(INDEX_NAME)
     return index
-
 
 # Store data in Pinecone
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
