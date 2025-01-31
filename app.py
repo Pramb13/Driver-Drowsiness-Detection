@@ -157,8 +157,16 @@ def main():
             
             # Add snapshot button to capture and process image
             if st.button("Snapshot"):
-                st.write("Snapshot Captured")
-                # After clicking "Snapshot", prediction and result will be shown automatically as above
+                # Saving the snapshot to session state
+                st.session_state.img = img
+                st.session_state.predicted_class_idx = predicted_class_idx
+                st.session_state.prediction_score = prediction_score
+
+                # Display snapshot after capturing
+                st.image(st.session_state.img, caption="Snapshot", use_container_width=True)
+                prediction_label = LABELS[st.session_state.predicted_class_idx]
+                st.write(f"**Prediction**: {prediction_label}")
+                st.write(f"**Confidence Score**: {st.session_state.prediction_score:.2f}")
     
     elif role == "admin":
         # Admin: Display statistics of drowsiness predictions
