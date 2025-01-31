@@ -6,7 +6,7 @@ import pinecone
 import numpy as np
 from sklearn.preprocessing import normalize
 
-# Access Pinecone secrets securely from Streamlit secrets
+# Access secrets securely from Streamlit secrets
 PINECONE_API_KEY = st.secrets["pinecone"]["api_key"]
 PINECONE_ENVIRONMENT = st.secrets["pinecone"]["environment"]
 INDEX_NAME = st.secrets["pinecone"]["index_name"]
@@ -43,14 +43,14 @@ def get_image_embedding(model, inputs):
 
 # Add image embedding to Pinecone
 def add_embedding_to_pinecone(embedding, image_id):
-    """Add image embedding to Pinecone index."""
+    """Normalize the embedding and add it to Pinecone."""
     embedding = normalize([embedding])[0]  # Normalize the embedding for Pinecone
     index.upsert(vectors=[(image_id, embedding)])
 
 # Search Pinecone for similar image embeddings
 def search_similar_embeddings(query_embedding, top_k=3):
-    """Search for similar embeddings in Pinecone."""
-    query_embedding = normalize([query_embedding])[0]
+    """Normalize the query embedding and search for similar vectors."""
+    query_embedding = normalize([query_embedding])[0]  # Normalize query vector
     result = index.query([query_embedding], top_k=top_k)
     return result
 
