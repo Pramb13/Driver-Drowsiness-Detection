@@ -27,7 +27,7 @@ def initialize_pinecone():
         st.error("Pinecone API key not set!")
         return None
     
-    pinecone.init(api_key=PINECONE_API_KEY, environment="us-west1-gcp")  # Change environment if needed
+    pinecone.init(api_key=PINECONE_API_KEY, environment="us-east1")  # Change environment if needed
     if INDEX_NAME not in pinecone.list_indexes():
         pinecone.create_index(INDEX_NAME, dimension=768)  # Dimension should match model output
     
