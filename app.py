@@ -1,170 +1,134 @@
 import streamlit as st
 import cv2
 import numpy as np
-from transformers import AutoModelForImageClassification, AutoFeatureExtractor
-from pinecone import Pinecone, ServerlessSpec
-import torch
-from PIL import Image
-import os
 import time
+import pinecone
+import dlib
+from imutils import face_utils
+import os
 
-# Set environment variables for Pinecone and Hugging Face
-os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
-os.environ['PINECONE_API_KEY'] = st.secrets["pinecone"]["api_key"]
+# Initialize Pinecone API
+PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
+pinecone.init(api_key=PINECONE_API_KEY, environment="us-east1-gcp")  # Initialize Pinecone client
 
-# Constants
-MODEL_NAME = "facebook/dino-vits16"  # You can use another model suited for drowsiness detection
-LABELS = ["Not Drowsy", "Drowsy"]  # Drowsiness detection labels
+# Drowsiness Detection Parameters
+EAR_THRESHOLD = 0.3  # Eye aspect ratio threshold for drowsiness detection
+EYE_AR_CONSEC_FRAMES = 48  # Number of frames to indicate drowsiness
 
-# Pinecone Configuration
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-INDEX_NAME = "drowsiness_detection"  # You can change this name
-pinecone_environment = "us-west1-gcp"
+# Load dlib's face detector and facial landmark predictor
+detector = dlib.get_frontal_face_detector()
+predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")  # Download from dlib model
 
-# Initialize Pinecone client
+# Function to calculate the Eye Aspect Ratio (EAR)
+def eye_aspect_ratio(eye):
+    A = np.linalg.norm(eye[1] - eye[5])
+    B = np.linalg.norm(eye[2] - eye[4])
+    C = np.linalg.norm(eye[0] - eye[3])
+    ear = (A + B) / (2.0 * C)
+    return ear
+
+# Create Pinecone index
+index_name = "driver-drowsiness"
+if index_name not in pinecone.list_indexes():
+    pinecone.create_index(
+        name=index_name,
+        dimension=384,  # Dimension of embeddings, can be modified
+        metric='cosine'
+    )
+
+# Create an index instance
+index = pinecone.Index(index_name)
+
 class DrowsinessDetection:
     def __init__(self):
-        try:
-            st.write("Initializing Drowsiness Detection...")
+        self.drowsy_frame_count = 0
+        self.drowsy = False
 
-            # Create an instance of the Pinecone client
-            self.pc = Pinecone(api_key=PINECONE_API_KEY)
-            
-            # Check if the index exists, create if it doesn't
-            if INDEX_NAME not in self.pc.list_indexes().names():
-                st.write(f"Creating Pinecone index: {INDEX_NAME}")
-                self.pc.create_index(
-                    name=INDEX_NAME,
-                    dimension=1024,  # Adjust to your model's output dimension
-                    metric='cosine',
-                    spec=ServerlessSpec(
-                        cloud='aws',
-                        region='us-east-1'
-                    )
-                )
-                st.write(f"Index '{INDEX_NAME}' created.")
+    def detect_drowsiness(self, frame):
+        # Convert to grayscale
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = detector(gray, 0)
+
+        for face in faces:
+            # Get facial landmarks
+            shape = predictor(gray, face)
+            shape = face_utils.shape_to_np(shape)
+
+            # Get the coordinates of the left and right eyes
+            left_eye = shape[42:48]
+            right_eye = shape[36:42]
+
+            # Calculate the EAR for both eyes
+            left_ear = eye_aspect_ratio(left_eye)
+            right_ear = eye_aspect_ratio(right_eye)
+
+            # Compute the average EAR
+            ear = (left_ear + right_ear) / 2.0
+
+            # Check if EAR is below threshold
+            if ear < EAR_THRESHOLD:
+                self.drowsy_frame_count += 1
+                if self.drowsy_frame_count >= EYE_AR_CONSEC_FRAMES:
+                    self.drowsy = True
             else:
-                st.write(f"Index '{INDEX_NAME}' already exists.")
-            
-            # Access the index
-            self.index = self.pc.Index(INDEX_NAME)  # Access Pinecone index
-            
-            st.write("Pinecone index is set.")
-        
-        except Exception as e:
-            st.error(f"Error initializing Pinecone: {e}")
-            raise  # Raise the exception if initialization fails
+                self.drowsy_frame_count = 0
+                self.drowsy = False
 
-    def load_model(self):
-        """Load the pre-trained HuggingFace model and feature extractor."""
-        model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
-        feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
-        return model, feature_extractor
+        return self.drowsy
 
-    def extract_image_features(self, image):
-        """Extract features from the image using the model's feature extractor."""
-        model, feature_extractor = self.load_model()
-        inputs = feature_extractor(images=image, return_tensors="pt")
-        with torch.no_grad():
-            outputs = model(**inputs)
-            feature_vector = outputs.logits.squeeze().cpu().numpy()
-        return feature_vector
+    def store_in_pinecone(self, drowsy_state, frame):
+        # Generate embeddings (mock embeddings for now, you can use actual face embeddings)
+        embedding = np.random.rand(384).tolist()  # Mock embeddings
+        metadata = {"drowsy_state": drowsy_state, "timestamp": time.time()}
 
-    def store_in_pinecone(self, image, predicted_class_idx, prediction_score):
-        """Store image prediction data in Pinecone."""
-        if not hasattr(self, 'index'):
-            st.error("Pinecone index is not initialized properly.")
-            return
-        
-        feature_vector = self.extract_image_features(image)
-        
-        # Ensure the feature vector dimension matches the index's dimension (1024)
-        if feature_vector.shape[0] != 1024:
-            st.error(f"Embedding dimension mismatch: Expected 1024, got {feature_vector.shape[0]}")
-            return
-
-        # Prepare metadata
-        metadata = {
-            "class": LABELS[predicted_class_idx],
-            "score": prediction_score,
-        }
-
-        # Generate unique vector ID
-        vector_id = str(np.random.randint(0, 1000000))
-
-        # Create the vector with the ID, feature vector, and metadata
-        vector = {
-            "id": vector_id,
-            "values": feature_vector.tolist(),
-            "metadata": metadata
-        }
+        upsert_data = [
+            ("drowsy_state", embedding, metadata)
+        ]
 
         try:
-            # Upsert the vector into the Pinecone index
-            upsert_response = self.index.upsert(
-                vectors=[vector],
-                namespace="ns1"  # Example namespace
-            )
-            st.write(f"Upserted data with ID: {vector_id}")
-            st.write(f"Upsert response: {upsert_response}")
+            response = index.upsert(vectors=upsert_data)
+            st.write(f"Upsert response: {response}")
         except Exception as e:
-            st.error(f"Error during Pinecone upsert: {e}")
+            st.error(f"Error during Pinecone upsert: {str(e)}")
 
-    def preprocess_image(self, image, feature_extractor):
-        """Preprocess the image for model prediction."""
-        image = image.convert("RGB")
-        inputs = feature_extractor(images=image, return_tensors="pt")
-        return inputs
+# Main function
+def main():
+    st.title("Driver Drowsiness Detection System")
+    st.write("Detect whether the driver is drowsy based on their eye movements.")
 
-    def get_prediction(self, model, inputs):
-        """Make a prediction using the model and return the predicted class and confidence."""
-        with torch.no_grad():
-            outputs = model(**inputs)
-            logits = outputs.logits  # Get raw prediction scores
-            predicted_class_idx = torch.argmax(logits, dim=-1).item()
-            prediction_score = logits.max().item()  # Highest score
-        return predicted_class_idx, prediction_score
+    # Start webcam feed
+    cap = cv2.VideoCapture(0)
+    drowsiness_detector = DrowsinessDetection()
 
-    def detect_drowsiness(self, image):
-        """Detect if the driver is drowsy."""
-        model, feature_extractor = self.load_model()
-        inputs = self.preprocess_image(image, feature_extractor)
-        predicted_class_idx, prediction_score = self.get_prediction(model, inputs)
-        return predicted_class_idx, prediction_score
+    while cap.isOpened():
+        ret, frame = cap.read()
 
-# Streamlit interface
-st.title("Driver Drowsiness Detection System")
+        if not ret:
+            break
 
-# Initialize the detection system
-drowsiness_detector = DrowsinessDetection()
+        # Detect drowsiness in the current frame
+        is_drowsy = drowsiness_detector.detect_drowsiness(frame)
 
-# Capture video from the webcam
-cap = cv2.VideoCapture(0)
+        # Show the result on the frame
+        if is_drowsy:
+            cv2.putText(frame, "Drowsy!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        else:
+            cv2.putText(frame, "Alert", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        st.error("Failed to grab frame from webcam")
-        break
+        # Display the frame using OpenCV
+        cv2.imshow('Frame', frame)
 
-    # Convert frame to PIL image for processing
-    image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        # If drowsiness detected, store the result in Pinecone
+        if is_drowsy:
+            drowsiness_detector.store_in_pinecone("Drowsy", frame)
 
-    # Detect drowsiness
-    predicted_class_idx, prediction_score = drowsiness_detector.detect_drowsiness(image)
+        # Break the loop if 'q' is pressed
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-    # Display the result
-    st.image(image, caption="Driver's face", use_column_width=True)
-    st.write(f"Prediction: {LABELS[predicted_class_idx]}")
-    st.write(f"Confidence score: {prediction_score:.2f}")
+    cap.release()
+    cv2.destroyAllWindows()
 
-    # Store the result in Pinecone
-    drowsiness_detector.store_in_pinecone(image, predicted_class_idx, prediction_score)
-
-    # Break the loop if 'q' is pressed (for testing purposes)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-# Release the webcam when done
-cap.release()
-cv2.destroyAllWindows()
+# Run the Streamlit app
+if __name__ == "__main__":
+    main()
