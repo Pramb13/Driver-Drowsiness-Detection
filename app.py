@@ -24,15 +24,18 @@ class DrowsinessDetection:
         """Initialize Pinecone client and ensure the index exists"""
         try:
             self.index_name = "imageembedding"  # Your Pinecone index name
+            st.write("Initializing Pinecone client...")  # Debugging log
 
             # Initialize Pinecone client
             pinecone.init(api_key=os.getenv('PINECONE_API_KEY'), environment=pinecone_environment)
+            st.write("Pinecone client initialized.")  # Debugging log
 
             # Check if index exists; create if not
             if self.index_name not in pinecone.list_indexes():
+                st.write(f"Creating index {self.index_name}...")
                 pinecone.create_index(
                     name=self.index_name,
-                    dimension=384,  # Ensure this matches the vector size
+                    dimension=1024,  # Ensure this matches the vector size
                     metric='cosine',  # Using cosine distance for vector similarity
                 )
                 st.write(f"Index '{self.index_name}' created.")
@@ -41,8 +44,9 @@ class DrowsinessDetection:
 
             # Access the index
             self.index = pinecone.Index(self.index_name)
+            st.write(f"Accessing Pinecone index: {self.index_name}")  # Debugging log
         except Exception as e:
-            st.write(f"Error initializing Pinecone: {e}")
+            st.write(f"Error initializing Pinecone: {e}")  # Debugging log
 
     def store_in_pinecone(self, image, predicted_class_idx, prediction_score):
         """Store image prediction data in Pinecone."""
