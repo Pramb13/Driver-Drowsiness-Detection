@@ -20,15 +20,18 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Pinecone index name
 pinecone_environment = st.secrets["pinecone"]["environment"]
 
+# Import Pinecone with alias
+from pinecone import pinecone as PineconeClient
+
 class DrowsinessDetection:
     def __init__(self):
-        # Initialize Pinecone client
-        pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
+        # Initialize Pinecone client (Pinecone SDK 2.x)
+        self.pc = PineconeClient.Client(api_key=PINECONE_API_KEY, environment=pinecone_environment)
         
         # Ensure the index exists, create if necessary
-        if INDEX_NAME not in pinecone.list_indexes():
+        if INDEX_NAME not in self.pc.list_indexes():
             st.write(f"Index '{INDEX_NAME}' does not exist. Creating it...")
-            pinecone.create_index(
+            self.pc.create_index(
                 name=INDEX_NAME,
                 dimension=1024,  # Embedding dimension (for DINO-ViT, it's 1024)
                 metric='cosine'  # Cosine similarity metric
@@ -38,7 +41,7 @@ class DrowsinessDetection:
             st.write(f"Index '{INDEX_NAME}' already exists.")
 
         # Set the Pinecone index
-        self.index = pinecone.Index(INDEX_NAME)
+        self.index = self.pc.Index(INDEX_NAME)
 
         # Load the Hugging Face model and feature extractor
         self.model, self.feature_extractor = self.load_model()
