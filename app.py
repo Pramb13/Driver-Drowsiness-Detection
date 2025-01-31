@@ -42,7 +42,7 @@ class DrowsinessDetection:
             else:
                 st.write(f"Index '{self.index_name}' already exists.")
 
-            # Access the index
+            # Access the index and assign it to the instance variable
             self.index = pinecone.Index(self.index_name)
             st.write(f"Accessing Pinecone index: {self.index_name}")  # Debugging log
         except Exception as e:
