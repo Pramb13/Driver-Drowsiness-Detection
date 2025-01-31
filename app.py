@@ -25,7 +25,7 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Initialize Pinecone (using pinecone.Client())
+# Initialize Pinecone connection
 def initialize_pinecone():
     """Initialize Pinecone connection."""
     PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')  # Retrieve from environment
@@ -36,11 +36,11 @@ def initialize_pinecone():
     # Fetch Pinecone environment from Streamlit secrets
     pinecone_environment = st.secrets["pinecone"]["environment"]  # Get environment from secrets
     
-    # Initialize Pinecone client (for v2.x.x)
-    client = pinecone.Client(api_key=PINECONE_API_KEY, environment=pinecone_environment)
-
+    # Initialize Pinecone connection (Pinecone v2.x.x doesn't require client)
+    pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
+    
     # Access the Pinecone index
-    index = client.index(INDEX_NAME)
+    index = pinecone.Index(INDEX_NAME)
     return index
 
 # Store data in Pinecone
