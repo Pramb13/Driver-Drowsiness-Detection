@@ -7,6 +7,15 @@ import time
 # Constants
 MODEL_NAME = "facebook/dino-vits16"
 LABELS = ["Not Drowsy", "Drowsy"]
+USER_CREDENTIALS = {"user": "123"}
+ADMIN_CREDENTIALS = {"admin": "admin123"}
+
+def authenticate(username, password, role):
+    if role == "User" and username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
+        return True
+    elif role == "Admin" and username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[username] == password:
+        return True
+    return False
 
 @st.cache_resource
 def load_model():
@@ -45,13 +54,25 @@ def display_result(image, predicted_class_idx, prediction_score):
 def sidebar():
     st.sidebar.title("Drowsiness Detection System")
     role = st.sidebar.radio("Select Role", ("User", "Admin"))
-    return role
+    username = st.sidebar.text_input("Username")
+    password = st.sidebar.text_input("Password", type="password")
+    if st.sidebar.button("Login"):
+        if authenticate(username, password, role):
+            st.session_state["authenticated"] = True
+            st.session_state["role"] = role
+            st.sidebar.success(f"Logged in as {role}")
+        else:
+            st.sidebar.error("Invalid credentials. Please try again.")
 
 def main():
     st.title("Real-Time Drowsiness Detection")
     st.markdown("This application detects drowsiness using a deep learning model.")
     
-    role = sidebar()
+    if "authenticated" not in st.session_state:
+        sidebar()
+        return
+    
+    role = st.session_state.get("role", "User")
     if role == "User":
         model, feature_extractor = load_model()
         if model is None or feature_extractor is None:
@@ -67,7 +88,8 @@ def main():
                 predicted_class_idx, prediction_score = get_prediction(model, inputs)
                 display_result(img, predicted_class_idx, prediction_score)
     else:
-        st.sidebar.write("Admin functionalities will be added here.")
+        st.title("Admin Dashboard")
+        st.write("Admin functionalities will be added here.")
 
 if __name__ == "__main__":
     main()
