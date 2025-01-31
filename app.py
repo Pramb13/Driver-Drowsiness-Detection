@@ -19,31 +19,33 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
 pinecone_environment = st.secrets["pinecone"]["environment"]
 
-# Initialize Pinecone client
-pc = PineconeClient(api_key=PINECONE_API_KEY)
+# Pinecone Setup for text embedding
+def setup_pinecone_index():
+    """Initialize Pinecone index for text embeddings."""
+    pc = PineconeClient(api_key=PINECONE_API_KEY)
+    index_name = "textembedding"
+    
+    # Check if the index exists, if not, create it
+    if index_name not in pc.list_indexes().names():
+        pc.create_index(
+            name=index_name,
+            dimension=384,
+            metric='cosine',
+        )
+        st.write(f"Index '{index_name}' created.")
+    else:
+        st.write(f"Index '{index_name}' already exists.")
 
-# Create the index if it doesn't exist
-if INDEX_NAME not in pc.list_indexes().names():
-    pc.create_index(
-        name=INDEX_NAME,
-        dimension=384,  # Ensure this matches the vector size
-        metric='cosine',  # Using cosine distance for vector similarity
-    )
-    st.write(f"Index '{INDEX_NAME}' created.")
-else:
-    st.write(f"Index '{INDEX_NAME}' already exists.")
+    return pc.Index(index_name)
 
-# Access the index
-index = pc.Index(INDEX_NAME)
-
-# Initialize the model and feature extractor
+# Load model and feature extractor for image classification
 def load_model():
     """Load pre-trained model and feature extractor."""
     model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Store data in Pinecone
+# Store data in Pinecone (for image embeddings)
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     """Store image prediction data in Pinecone."""
     feature_vector = extract_image_features(image)  # Extract image features
@@ -70,6 +72,7 @@ def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     st.write(f"Upserted data with ID: {vector_id}")
     return upsert_response
 
+# Extract image features for embedding
 def extract_image_features(image):
     """Extract features from the image using the model's feature extractor."""
     model, feature_extractor = load_model()
@@ -107,7 +110,10 @@ def display_result(image, predicted_class_idx, prediction_score):
 # Main Streamlit interface
 def main():
     """Main function to handle Streamlit interface and prediction process."""
-    # Load model and feature extractor
+    # Setup Pinecone index for text embedding
+    text_index = setup_pinecone_index()
+
+    # Load model and feature extractor for image classification
     model, feature_extractor = load_model()
 
     # Capture image from webcam
@@ -122,7 +128,7 @@ def main():
         predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
         # Store the result in Pinecone
-        store_in_pinecone(index, img, predicted_class_idx, prediction_score)
+        store_in_pinecone(text_index, img, predicted_class_idx, prediction_score)
 
         # Display the image and prediction result
         display_result(img, predicted_class_idx, prediction_score)
