@@ -12,6 +12,10 @@ from sentence_transformers import SentenceTransformer
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 
+# Fetch Hugging Face API key from Streamlit secrets
+HUGGINGFACE_API_KEY = st.secrets["huggingface"]["api_key"]
+os.environ['HUGGINGFACE_API_KEY'] = HUGGINGFACE_API_KEY  # Set the API key in the environment
+
 # Fetch Pinecone API key and index name securely from Streamlit secrets
 PINECONE_API_KEY = st.secrets["pinecone"]["api_key"]  # Secure access to the Pinecone API key
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
@@ -93,31 +97,4 @@ def display_result(image, predicted_class_idx, prediction_score):
 
 # Main Streamlit interface
 def main():
-    """Main function to handle Streamlit interface and prediction process."""
-    # Load model and feature extractor
-    model, feature_extractor = load_model()
-
-    # Initialize Pinecone index (without index creation)
-    index = initialize_pinecone()
-    if not index:
-        return  # Stop the app if Pinecone initialization fails
-
-    # Capture image from webcam
-    camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
-    
-    if camera_input is not None:
-        # Load and preprocess image
-        img = Image.open(camera_input)
-        inputs = preprocess_image(img, feature_extractor)
-
-        # Get prediction
-        predicted_class_idx, prediction_score = get_prediction(model, inputs)
-
-        # Store the result in Pinecone
-        store_in_pinecone(index, img, predicted_class_idx, prediction_score)
-
-        # Display the image and prediction result
-        display_result(img, predicted_class_idx, prediction_score)
-
-if __name__ == "__main__":
-    main()
+    """Main function to
