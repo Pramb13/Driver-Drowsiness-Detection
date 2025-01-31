@@ -3,15 +3,15 @@ import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 from datetime import datetime
-import sounddevice as sd
-import numpy as np
 import os
 import pandas as pd
+from playsound import playsound  # Import playsound for alert sound
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 HISTORY_FILE = "drowsiness_history.csv"  # File to track drowsiness history
+ALERT_SOUND_PATH = "alert_sound.mp3"  # Path to your alert sound file (replace with actual file)
 
 # Initialize the model and feature extractor
 def load_model():
@@ -46,13 +46,10 @@ def get_current_time():
 # Play an alert sound when drowsiness is detected
 def play_alert():
     """Play an alert sound when drowsiness is detected."""
-    fs = 44100  # Sample rate
-    duration = 1  # seconds
-    t = np.linspace(0, duration, int(fs * duration), endpoint=False)
-    freq = 440  # Hz, A4 note
-    audio = np.sin(2 * np.pi * freq * t)
-    sd.play(audio, fs)
-    sd.wait()
+    if os.path.exists(ALERT_SOUND_PATH):
+        playsound(ALERT_SOUND_PATH)
+    else:
+        print("Alert sound file not found!")
 
 # Save drowsiness event to history file
 def save_to_history(prediction, confidence, current_time):
