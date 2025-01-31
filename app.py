@@ -11,7 +11,6 @@ PINECONE_API_KEY = st.secrets["pinecone"]["api_key"]
 PINECONE_ENVIRONMENT = st.secrets["pinecone"]["environment"]
 INDEX_NAME = st.secrets["pinecone"]["index_name"]
 
-
 # Initialize the HuggingFace model
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
@@ -39,13 +38,13 @@ def get_image_embedding(model, inputs):
     return embeddings.squeeze().cpu().numpy()
 
 # Add image embedding to Pinecone
-def add_embedding_to_pinecone(embedding, image_id):
+def add_embedding_to_pinecone(index, embedding, image_id):
     """Normalize the embedding and add it to Pinecone."""
     embedding = normalize([embedding])[0]  # Normalize the embedding for Pinecone
     index.upsert(vectors=[(image_id, embedding)])
 
 # Search Pinecone for similar image embeddings
-def search_similar_embeddings(query_embedding, top_k=3):
+def search_similar_embeddings(index, query_embedding, top_k=3):
     """Normalize the query embedding and search for similar vectors."""
     query_embedding = normalize([query_embedding])[0]  # Normalize query vector
     result = index.query([query_embedding], top_k=top_k)
@@ -58,8 +57,30 @@ def display_result(image, predicted_class_idx, prediction_score):
     prediction_label = LABELS[predicted_class_idx]
     st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
 
+# Function to create Pinecone index (or use an existing one)
+def create_pinecone_index():
+    """Check if the index exists and create it if it doesn't."""
+    # Pinecone initialization happens automatically through Streamlit secrets management
+    index = pinecone.Index(INDEX_NAME)
+    
+    # Check if the index exists and create it if not
+    try:
+        # Checking the status of the index
+        index.describe_index_stats()
+        print(f"Index '{INDEX_NAME}' already exists.")
+    except Exception as e:
+        print(f"Index '{INDEX_NAME}' not found. Creating index...")
+        # Adjust dimension based on your model's output size (e.g., 512 for many transformer models)
+        pinecone.create_index(INDEX_NAME, dimension=512)
+        index = pinecone.Index(INDEX_NAME)
+
+    return index
+
 # Main Streamlit interface
 def main():
+    """Main function to handle Streamlit interface and prediction process."""
+    # Create Pinecone index (or use an existing one)
+    index = create_pinecone_index()
 
     # Load model and feature extractor
     model, feature_extractor = load_model()
@@ -77,7 +98,7 @@ def main():
 
         # Add image embedding to Pinecone
         image_id = "unique_image_id"  # Generate a unique image ID (could use timestamp or other unique identifiers)
-        add_embedding_to_pinecone(embedding, image_id)
+        add_embedding_to_pinecone(index, embedding, image_id)
 
         # Get prediction (optional)
         predicted_class_idx, prediction_score = get_prediction(model, inputs)
@@ -86,7 +107,7 @@ def main():
         display_result(img, predicted_class_idx, prediction_score)
 
         # Optionally search for similar images in Pinecone (for demonstration)
-        similar_results = search_similar_embeddings(embedding)
+        similar_results = search_similar_embeddings(index, embedding)
         st.write("Similar Images Found in Pinecone:")
         for result in similar_results['matches']:
             st.write(f"ID: {result['id']}, Score: {result['score']}")
