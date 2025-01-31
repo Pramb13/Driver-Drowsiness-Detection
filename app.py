@@ -20,18 +20,6 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Initialize Pinecone (simplified)
-def initialize_pinecone():
-    """Initialize Pinecone connection."""
-    if not PINECONE_API_KEY:
-        st.error("Pinecone API key not set!")
-        return None
-    
-    pinecone.init(api_key=PINECONE_API_KEY, environment="us-east1")  # Change environment if needed
-    
-    # Directly return the existing index (no check or creation of index)
-    return pinecone.Index(INDEX_NAME)
-
 # Store data in Pinecone
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     """Store image prediction data in Pinecone."""
