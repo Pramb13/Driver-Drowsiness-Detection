@@ -2,19 +2,22 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
+import pinecone
 import numpy as np
 import os
-import time
 
-# Set Hugging Face API key from Streamlit secrets
+# Set Hugging Face API key and Pinecone API key from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
+os.environ['PINECONE_API_KEY'] = st.secrets["pinecone"]["api_key"]
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 
-# Fetch Pinecone index name securely from Streamlit secrets
+# Fetch Pinecone API key, index name, and environment securely from Streamlit secrets
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
+pinecone_environment = st.secrets["pinecone"]["environment"]
 
 # Initialize the model and feature extractor
 def load_model():
@@ -23,7 +26,35 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Store data in Pinecone (remove Pinecone initialization)
+# Initialize Pinecone
+class PineconeHandler:
+    def __init__(self, api_key, index_name, environment):
+        self.api_key = api_key
+        self.index_name = index_name
+        self.environment = environment
+        self.pc = None
+        self.index = None
+        self.initialize()
+
+    def initialize(self):
+        """Initialize Pinecone client and create the index if it doesn't exist."""
+        pinecone.init(api_key=self.api_key, environment=self.environment)
+        self.pc = pinecone.Client()  # Initialize Pinecone client
+        if self.index_name not in self.pc.list_indexes():
+            # Create the index with the necessary dimension (ensure this matches your vector dimension)
+            self.pc.create_index(
+                name=self.index_name,
+                dimension=384,  # Ensure this is the dimension of your feature vectors
+                metric='cosine',  # You can use cosine distance or other metrics
+            )
+            st.write(f"Index '{self.index_name}' created.")
+        else:
+            st.write(f"Index '{self.index_name}' already exists.")
+
+        # Initialize the Pinecone index
+        self.index = self.pc.Index(self.index_name)
+
+# Store data in Pinecone
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     """Store image prediction data in Pinecone."""
     # Convert image to a feature vector using the model's feature extractor
@@ -39,7 +70,9 @@ def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     vector_id = str(np.random.randint(0, 1000000))
 
     # Upsert the vector and metadata into Pinecone
-    index.upsert([(vector_id, feature_vector.tolist(), metadata)])
+    upsert_response = index.upsert([(vector_id, feature_vector.tolist(), metadata)])
+    st.write(f"Upserted data with ID: {vector_id}")
+    return upsert_response
 
 def extract_image_features(image):
     """Extract features from the image using the model's feature extractor."""
@@ -81,6 +114,13 @@ def main():
     # Load model and feature extractor
     model, feature_extractor = load_model()
 
+    # Initialize Pinecone client and create index if it doesn't exist
+    pinecone_handler = PineconeHandler(PINECONE_API_KEY, INDEX_NAME, pinecone_environment)
+    index = pinecone_handler.index  # Get the initialized Pinecone index
+
+    if not index:
+        return  # Stop the app if Pinecone initialization fails
+
     # Capture image from webcam
     camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
     
@@ -92,8 +132,8 @@ def main():
         # Get prediction
         predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
-        # Assuming Pinecone index is already initialized and passed here for storing
-        # store_in_pinecone(index, img, predicted_class_idx, prediction_score)  # Uncomment if needed
+        # Store the result in Pinecone
+        store_in_pinecone(index, img, predicted_class_idx, prediction_score)
 
         # Display the image and prediction result
         display_result(img, predicted_class_idx, prediction_score)
