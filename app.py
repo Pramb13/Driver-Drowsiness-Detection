@@ -9,8 +9,8 @@ import os
 import time
 
 # Predefined user credentials for simplicity
-USER_CREDENTIALS = {"user": "user_password"}
-ADMIN_CREDENTIALS = {"admin": "admin_password"}
+USER_CREDENTIALS = {"user": "123"}
+ADMIN_CREDENTIALS = {"admin": "123"}
 
 # Placeholder for drowsiness data (this would be stored in a database in real life)
 drowsiness_data = []
@@ -61,6 +61,18 @@ class DrowsinessDetection:
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
         drowsiness_data.append(metadata)
+        self.dump_data_to_csv(metadata)  # Save data to CSV
+
+    def dump_data_to_csv(self, metadata):
+        """Append data to a CSV file for future use."""
+        df = pd.DataFrame([metadata])
+        file_path = "drowsiness_data.csv"
+
+        # If the file does not exist, create it with headers
+        if not os.path.exists(file_path):
+            df.to_csv(file_path, index=False, header=True)
+        else:
+            df.to_csv(file_path, mode='a', header=False, index=False)
 
 # Function to display graphs for Admin
 def display_graph():
@@ -122,6 +134,8 @@ def main():
     if role == "user":
         # User: Real-time webcam feed for drowsiness detection
         st.title("Real-time Drowsiness Detection")
+        st.markdown("<h3 style='text-align: center; color: #1E88E5;'>Stay Safe, Stay Alert!</h3>", unsafe_allow_html=True)
+        st.markdown("### Capturing your face to detect drowsiness.")
         drowsiness_detector = DrowsinessDetection()
 
         # Capture image from webcam
@@ -138,12 +152,26 @@ def main():
             # Display result
             st.image(img, caption="Captured Image from Webcam", use_container_width=True)
             prediction_label = LABELS[predicted_class_idx]
-            st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
+            st.write(f"**Prediction**: {prediction_label}")
+            st.write(f"**Confidence Score**: {prediction_score:.2f}")
     
     elif role == "admin":
         # Admin: Display statistics of drowsiness predictions
         st.title("Admin Dashboard")
+        st.markdown("<h3 style='text-align: center; color: #E53935;'>Monitor Drowsiness Patterns</h3>", unsafe_allow_html=True)
         display_graph()
+        
+        st.markdown("### Download the Drowsiness Report")
+        if len(drowsiness_data) > 0:
+            df = pd.DataFrame(drowsiness_data)
+            st.write("### Drowsiness Data (Last 10 records)")
+            st.dataframe(df.tail(10))  # Display last 10 records
+            st.download_button(
+                label="Download as CSV",
+                data=df.to_csv(index=False),
+                file_name="drowsiness_data.csv",
+                mime="text/csv",
+            )
 
 if __name__ == "__main__":
     main()
