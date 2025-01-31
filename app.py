@@ -6,13 +6,13 @@ import numpy as np
 import seaborn as sns
 import pandas as pd
 import os
+import time
 
-# Predefined user credentials
+# Predefined user credentials for simplicity
 USER_CREDENTIALS = {"user": "user_password"}
 ADMIN_CREDENTIALS = {"admin": "admin_password"}
 
-# Placeholder for drowsiness data for demo purposes
-# In a production setting, you can store this data in a database
+# Placeholder for drowsiness data (this would be stored in a database in real life)
 drowsiness_data = []
 
 # Set Hugging Face API key
@@ -34,7 +34,7 @@ def login(username, password):
 # DrowsinessDetection class
 class DrowsinessDetection:
     def __init__(self):
-        """Initialize the model and feature extractor"""
+        """Initialize the model and feature extractor."""
         self.model, self.feature_extractor = self.load_model()
 
     def load_model(self):
@@ -48,75 +48,102 @@ class DrowsinessDetection:
         inputs = self.feature_extractor(images=image, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model(**inputs)
-            logits = outputs.logits  # Get the raw prediction scores
+            logits = outputs.logits  # Raw prediction scores
             predicted_class_idx = torch.argmax(logits, dim=-1).item()
             prediction_score = logits.max().item()  # Highest score value
         return predicted_class_idx, prediction_score
 
-# Seaborn visualization for Admin
-def plot_drowsiness_data():
-    """Generate a seaborn plot based on the drowsiness data collected."""
-    if drowsiness_data:
-        # Convert data to a DataFrame
-        df = pd.DataFrame(drowsiness_data)
-        
-        # Plotting the data
-        st.subheader("Drowsiness Prediction Data")
-        fig = sns.countplot(x='prediction', data=df, palette='viridis')
-        fig.set_title('Drowsiness Predictions Over Time')
-        st.pyplot(fig)
-    else:
-        st.write("No data available to display.")
+    def store_in_drowsiness_data(self, predicted_class_idx, prediction_score):
+        """Store the drowsiness detection result for admin view."""
+        metadata = {
+            "class": LABELS[predicted_class_idx],
+            "score": prediction_score,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        drowsiness_data.append(metadata)
 
-# Sidebar Login
-def login_sidebar():
-    """Login interface for users to enter their credentials."""
-    st.sidebar.title("Login")
-    username = st.sidebar.text_input("Username")
-    password = st.sidebar.text_input("Password", type="password")
-    login_button = st.sidebar.button("Login")
+# Function to display graphs for Admin
+def display_graph():
+    """Display prediction statistics using Seaborn."""
+    if len(drowsiness_data) == 0:
+        st.write("No records available for display.")
+        return
 
-    if login_button:
-        user_type = login(username, password)
-        return user_type
-    return None
+    # Create a DataFrame from the collected data
+    df = pd.DataFrame(drowsiness_data)
+    
+    # Seaborn bar plot
+    st.subheader("Prediction Statistics")
+    prediction_counts = df['class'].value_counts()
+    sns.set_theme(style="whitegrid")
+    ax = sns.barplot(x=prediction_counts.index, y=prediction_counts.values, palette="Blues_d")
+    ax.set(xlabel="Prediction", ylabel="Count")
+    st.pyplot(ax.figure)
 
-# Main function to handle different user roles
+# Sidebar for Login & Role Selection
+def sidebar():
+    """Sidebar with role-based login system."""
+    st.sidebar.title("Drowsiness Detection System")
+    role = st.sidebar.radio("Select Role", ("User", "Admin"))
+    
+    if role == "User":
+        st.sidebar.subheader("Login as User")
+        username = st.sidebar.text_input("Username")
+        password = st.sidebar.text_input("Password", type="password")
+
+        if st.sidebar.button("Login"):
+            user_role = login(username, password)
+            if user_role == "user":
+                st.sidebar.success("Login successful! You are logged in as User.")
+                return "user"
+            else:
+                st.sidebar.error("Invalid credentials. Please try again.")
+                return None
+
+    elif role == "Admin":
+        st.sidebar.subheader("Login as Admin")
+        username = st.sidebar.text_input("Username")
+        password = st.sidebar.text_input("Password", type="password")
+
+        if st.sidebar.button("Login"):
+            admin_role = login(username, password)
+            if admin_role == "admin":
+                st.sidebar.success("Login successful! You are logged in as Admin.")
+                return "admin"
+            else:
+                st.sidebar.error("Invalid credentials. Please try again.")
+                return None
+
+# Main Streamlit interface
 def main():
-    """Main function to handle the interface and prediction process."""
-    st.title("Drowsiness Detection System")
+    """Main function to handle Streamlit interface and prediction process."""
+    role = sidebar()
     
-    # Login sidebar for authentication
-    user_type = login_sidebar()
-    
-    if user_type == "user":
-        # User's interface
-        st.subheader("Welcome User! Capture an image to predict drowsiness.")
+    if role == "user":
+        # User: Real-time webcam feed for drowsiness detection
+        st.title("Real-time Drowsiness Detection")
         drowsiness_detector = DrowsinessDetection()
-        
+
         # Capture image from webcam
         camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
         
         if camera_input is not None:
-            # Load and process the captured image
+            # Load and preprocess image
             img = Image.open(camera_input)
             predicted_class_idx, prediction_score = drowsiness_detector.get_prediction(img)
             
-            # Store prediction data (for demonstration, we'll append it)
-            result = LABELS[predicted_class_idx]
-            st.image(img, caption="Captured Image", use_container_width=True)
-            st.write(f"Prediction: {result} with confidence {prediction_score:.2f}")
+            # Store result in drowsiness data (only for admin view)
+            drowsiness_detector.store_in_drowsiness_data(predicted_class_idx, prediction_score)
             
-            # No record stored for the user
-            # You could optionally store user-specific data here for further analysis.
-            
-    elif user_type == "admin":
-        # Admin's interface
-        st.subheader("Welcome Admin! View historical prediction data.")
-        plot_drowsiness_data()
-        
-    elif user_type is None:
-        st.write("Please enter valid credentials.")
+            # Display result
+            st.image(img, caption="Captured Image from Webcam", use_container_width=True)
+            prediction_label = LABELS[predicted_class_idx]
+            st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
     
+    elif role == "admin":
+        # Admin: Display statistics of drowsiness predictions
+        st.title("Admin Dashboard")
+        display_graph()
+
 if __name__ == "__main__":
     main()
