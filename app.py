@@ -29,7 +29,7 @@ def setup_pinecone_index():
     if index_name not in pc.list_indexes().names():
         pc.create_index(
             name=index_name,
-            dimension=384,
+            dimension=1024,
             metric='cosine',
         )
         st.write(f"Index '{index_name}' created.")
