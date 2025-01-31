@@ -20,8 +20,7 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Pinecone index name
 pinecone_environment = st.secrets["pinecone"]["environment"]
 
-# Initialize Pinecone client
-pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
+
 index = pinecone.Index(INDEX_NAME)
 
 # Load model and feature extractor
