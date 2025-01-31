@@ -77,11 +77,6 @@ def main():
     # Load model and feature extractor
     model, feature_extractor = load_model()
 
-    # Initialize Pinecone index (without index creation)
-    index = initialize_pinecone()
-    if not index:
-        return  # Stop the app if Pinecone initialization fails
-
     # Capture image from webcam
     camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
     
