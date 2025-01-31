@@ -1,7 +1,6 @@
 streamlit
 torch
 torchvision
-transformers
+sentence-transformers 
 Pillow
 pinecone-client
-sentence-transformers
