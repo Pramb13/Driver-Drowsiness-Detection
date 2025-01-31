@@ -1,5 +1,6 @@
 import streamlit as st
 import torch
+import pandas as pd
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 import time
@@ -9,6 +10,9 @@ MODEL_NAME = "facebook/dino-vits16"
 LABELS = ["Not Drowsy", "Drowsy"]
 USER_CREDENTIALS = {"user": "123"}
 ADMIN_CREDENTIALS = {"admin": "admin123"}
+
+if "predictions" not in st.session_state:
+    st.session_state["predictions"] = []
 
 def authenticate(username, password, role):
     if role == "User" and username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
@@ -48,6 +52,7 @@ def display_result(image, predicted_class_idx, prediction_score):
     if predicted_class_idx is not None:
         prediction_label = LABELS[predicted_class_idx]
         st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
+        st.session_state["predictions"].append({"Prediction": prediction_label, "Confidence Score": prediction_score})
     else:
         st.write("Error: Could not make a prediction.")
 
@@ -67,9 +72,9 @@ def sidebar():
 def main():
     st.title("Real-Time Drowsiness Detection")
     st.markdown("This application detects drowsiness using a deep learning model.")
+    sidebar()
     
     if "authenticated" not in st.session_state:
-        sidebar()
         return
     
     role = st.session_state.get("role", "User")
@@ -89,7 +94,12 @@ def main():
                 display_result(img, predicted_class_idx, prediction_score)
     else:
         st.title("Admin Dashboard")
-        st.write("Admin functionalities will be added here.")
+        st.write("Below are the recorded predictions:")
+        if st.session_state["predictions"]:
+            df = pd.DataFrame(st.session_state["predictions"])
+            st.dataframe(df)
+        else:
+            st.write("No data available.")
 
 if __name__ == "__main__":
     main()
