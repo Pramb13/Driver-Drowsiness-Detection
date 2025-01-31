@@ -26,9 +26,9 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Initialize Pinecone client
-pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
-pc = pinecone.Client()  # Initialize Pinecone client
+# Initialize Pinecone client (Updated method)
+pc = pinecone.Client(api_key=PINECONE_API_KEY)  # Initialize Pinecone client
+pc.init(environment=pinecone_environment)  # Set environment for the client
 
 # Create the index if it doesn't exist
 if INDEX_NAME not in pc.list_indexes():
