@@ -5,6 +5,7 @@ from PIL import Image
 import pinecone
 import numpy as np
 from sklearn.preprocessing import normalize
+import time
 
 # Access secrets securely from Streamlit secrets
 PINECONE_API_KEY = st.secrets["pinecone"]["api_key"]
@@ -80,6 +81,16 @@ def create_pinecone_index():
 
     return index
 
+# Get the prediction result from the model
+def get_prediction(model, inputs):
+    """Generate prediction from the model for the processed image."""
+    with torch.no_grad():
+        outputs = model(**inputs)
+        logits = outputs.logits
+        predicted_class_idx = logits.argmax(dim=-1).item()  # Get the index of the highest score
+        prediction_score = torch.nn.functional.softmax(logits, dim=-1)[0, predicted_class_idx].item()  # Get the confidence score
+    return predicted_class_idx, prediction_score
+
 # Main Streamlit interface
 def main():
     """Main function to handle Streamlit interface and prediction process."""
@@ -100,8 +111,8 @@ def main():
         # Get image embedding
         embedding = get_image_embedding(model, inputs)
 
-        # Add image embedding to Pinecone
-        image_id = "unique_image_id"  # Generate a unique image ID (could use timestamp or other unique identifiers)
+        # Generate a unique image ID (e.g., timestamp or random string)
+        image_id = f"img-{int(time.time())}"  # Using current timestamp for uniqueness
         add_embedding_to_pinecone(index, embedding, image_id)
 
         # Get prediction (optional)
