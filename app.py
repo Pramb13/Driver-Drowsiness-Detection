@@ -2,20 +2,18 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-import pinecone
 import numpy as np
 import os
 import time
 
-# Set Hugging Face API key and Pinecone API key from Streamlit secrets
+# Set Hugging Face API key from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
-os.environ['PINECONE_API_KEY'] = st.secrets["pinecone"]["api_key"]
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 
-# Fetch Pinecone API key and index name securely from Streamlit secrets
+# Fetch Pinecone index name securely from Streamlit secrets
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
 
 # Initialize the model and feature extractor
@@ -25,14 +23,7 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-      # Fetch Pinecone environment from Streamlit secrets
-pinecone_environment = st.secrets["pinecone"]["environment"]  # Get environment from secrets
-    
-    # Access the Pinecone index
-index = pinecone.Index(INDEX_NAME)
-
-
-# Store data in Pinecone
+# Store data in Pinecone (remove Pinecone initialization)
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     """Store image prediction data in Pinecone."""
     # Convert image to a feature vector using the model's feature extractor
@@ -77,11 +68,6 @@ def get_prediction(model, inputs):
         prediction_score = logits.max().item()  # Highest score value
     return predicted_class_idx, prediction_score
 
-# Lazy import for sentence transformer model
-def load_sentence_transformer():
-    from sentence_transformers import SentenceTransformer
-    return SentenceTransformer('all-MiniLM-L6-v2')
-
 # Display the image and prediction result
 def display_result(image, predicted_class_idx, prediction_score):
     """Display the image along with the prediction result."""
@@ -95,11 +81,6 @@ def main():
     # Load model and feature extractor
     model, feature_extractor = load_model()
 
-    # Initialize Pinecone index (using the updated initialization method)
-    index = initialize_pinecone()
-    if not index:
-        return  # Stop the app if Pinecone initialization fails
-
     # Capture image from webcam
     camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
     
@@ -111,8 +92,8 @@ def main():
         # Get prediction
         predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
-        # Store the result in Pinecone
-        store_in_pinecone(index, img, predicted_class_idx, prediction_score)
+        # Assuming Pinecone index is already initialized and passed here for storing
+        # store_in_pinecone(index, img, predicted_class_idx, prediction_score)  # Uncomment if needed
 
         # Display the image and prediction result
         display_result(img, predicted_class_idx, prediction_score)
