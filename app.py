@@ -2,7 +2,7 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-from pinecone import Pinecone as PineconeClient
+import pinecone  # Correct import for Pinecone client
 import numpy as np
 import os
 
@@ -19,21 +19,13 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
 pinecone_environment = st.secrets["pinecone"]["environment"]
 
-# Initialize the model and feature extractor
-def load_model():
-    """Load pre-trained model and feature extractor."""
-    model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
-    feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
-    return model, feature_extractor
-
-# Initialize Pinecone client (Updated method)
-pc = PineconeClient(api_key=PINECONE_API_KEY)  # Initialize Pinecone client
-pc.init(environment=pinecone_environment)  # Set environment for the client
+# Initialize Pinecone client
+pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
 
 # Create the index if it doesn't exist
-if INDEX_NAME not in pc.list_indexes():
+if INDEX_NAME not in pinecone.list_indexes():
     # Create the index if it doesn't exist
-    pc.create_index(
+    pinecone.create_index(
         name=INDEX_NAME,
         dimension=384,  # Ensure this matches the vector size
         metric='cosine',  # Using cosine distance for vector similarity
@@ -43,7 +35,14 @@ else:
     st.write(f"Index '{INDEX_NAME}' already exists.")
 
 # Access the index
-index = pc.Index(INDEX_NAME)
+index = pinecone.Index(INDEX_NAME)
+
+# Initialize the model and feature extractor
+def load_model():
+    """Load pre-trained model and feature extractor."""
+    model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
+    feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
+    return model, feature_extractor
 
 # Store data in Pinecone
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
