@@ -26,7 +26,7 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Initialize Pinecone
+# Pinecone client handler
 class PineconeHandler:
     def __init__(self, api_key, index_name, environment):
         self.api_key = api_key
@@ -38,39 +38,63 @@ class PineconeHandler:
 
     def initialize(self):
         """Initialize Pinecone client and create the index if it doesn't exist."""
+        # Initialize Pinecone client
         pinecone.init(api_key=self.api_key, environment=self.environment)
         self.pc = pinecone.Client()  # Initialize Pinecone client
         if self.index_name not in self.pc.list_indexes():
-            # Create the index with the necessary dimension (ensure this matches your vector dimension)
+            # Create the index if it doesn't exist
             self.pc.create_index(
                 name=self.index_name,
-                dimension=384,  # Ensure this is the dimension of your feature vectors
-                metric='cosine',  # You can use cosine distance or other metrics
+                dimension=384,  # Ensure this matches the vector size
+                metric='cosine',  # Using cosine distance for vector similarity
             )
             st.write(f"Index '{self.index_name}' created.")
         else:
             st.write(f"Index '{self.index_name}' already exists.")
-
-        # Initialize the Pinecone index
+        
+        # Access the index
         self.index = self.pc.Index(self.index_name)
+
+    def upsert_data(self, vectors, namespace="default"):
+        """Upsert data into Pinecone with specified namespace."""
+        response = self.index.upsert(
+            vectors=vectors,
+            namespace=namespace
+        )
+        return response
+
+    def query_data(self, query_vector, namespace="default", top_k=2):
+        """Query data from Pinecone."""
+        response = self.index.query(
+            namespace=namespace,
+            vector=query_vector,
+            top_k=top_k,
+            include_values=True,
+            include_metadata=True
+        )
+        return response
 
 # Store data in Pinecone
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
     """Store image prediction data in Pinecone."""
-    # Convert image to a feature vector using the model's feature extractor
-    feature_vector = extract_image_features(image)  # Extract image features from model
+    feature_vector = extract_image_features(image)  # Extract image features
 
-    # Prepare the metadata for the image
+    # Prepare metadata and generate unique vector ID
     metadata = {
         "class": LABELS[predicted_class_idx],
         "score": prediction_score,
     }
+    vector_id = str(np.random.randint(0, 1000000))  # Generate a random ID
 
-    # Generate a unique ID for the image
-    vector_id = str(np.random.randint(0, 1000000))
+    # Create the vector with the ID, feature vector, and metadata
+    vector = {
+        "id": vector_id,
+        "values": feature_vector.tolist(),  # Ensure it's a list for Pinecone
+        "metadata": metadata
+    }
 
-    # Upsert the vector and metadata into Pinecone
-    upsert_response = index.upsert([(vector_id, feature_vector.tolist(), metadata)])
+    # Upsert the vector into the Pinecone index
+    upsert_response = index.upsert_data([vector], namespace="ns1")  # Using "ns1" as the namespace
     st.write(f"Upserted data with ID: {vector_id}")
     return upsert_response
 
