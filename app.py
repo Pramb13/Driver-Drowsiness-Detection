@@ -1,48 +1,43 @@
 import streamlit as st
+import cv2
+import numpy as np
 from keras.models import load_model
-import io
 import os
+
+# Display TensorFlow version for debugging
 import tensorflow as tf
-import h5py
-
-# Display TensorFlow and h5py versions for debugging
 st.write(f"TensorFlow version: {tf.__version__}")
-st.write(f"h5py version: {h5py.__version__}")
 
-# Define the model path (you could place this in your repository)
-model_path = 'drowsiness_model.h5'
+# Path to the pre-trained model (ensure the model is included in your app directory)
+model_path = 'drowsiness_model.h5'  # or 'models/drowsiness_model.h5' if in a subfolder
 
-# Check if model file exists in the current directory (for static files)
+# Load the model from the predefined path when the app starts
 if os.path.exists(model_path):
-    st.write(f"Model file found at: {os.path.abspath(model_path)}")
+    model = load_model(model_path)
+    st.write("Model loaded successfully!")
 else:
-    st.write("Model file not found in the specified path. Please upload a model.")
+    st.error(f"Model file not found at the specified path: {model_path}")
 
-# File uploader widget for dynamically uploading the model
-uploaded_file = st.file_uploader("Upload your model (h5)", type=["h5"])
+# Access webcam and display video feed
+camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
 
-# Handle file upload or loading from the local path
-if uploaded_file is not None:
-    try:
-        # If a file is uploaded, attempt to load the model from the uploaded file
-        model = load_model(io.BytesIO(uploaded_file.read()))
-        st.write("Model loaded successfully from uploaded file!")
-    except Exception as e:
-        # If there is an error loading the model, show the error message
-        st.error(f"Error loading model from uploaded file: {str(e)}")
-        
-elif os.path.exists(model_path):
-    # If no file is uploaded, attempt to load the static model file
-    try:
-        model = load_model(model_path)
-        st.write("Model loaded successfully from local path!")
-    except Exception as e:
-        # If there is an error loading the model, show the error message
-        st.error(f"Error loading model from local path: {str(e)}")
+if camera_input is not None and 'model' in locals():
+    # Convert image from the uploaded image (from camera)
+    image = cv2.imdecode(np.frombuffer(camera_input, np.uint8), cv2.IMREAD_COLOR)
 
-# If the model is loaded successfully, you can add inference code here
-if 'model' in locals():
-    # Example: You can perform inference with your model here
-    st.write("Model is ready for inference. Add your code to perform predictions.")
+    # Resize image to match the model input size (e.g., 224x224)
+    image_resized = cv2.resize(image, (224, 224))
+
+    # Preprocess the image (normalization, etc.)
+    image_processed = image_resized / 255.0  # Normalize if needed
+
+    # Make a prediction with the model
+    prediction = model.predict(np.expand_dims(image_processed, axis=0))
+
+    # Display the prediction (you can modify it based on your model's output)
+    st.write(f"Prediction: {prediction}")
+
+    # Optionally, display the captured image from the webcam
+    st.image(image, channels="BGR", caption="Captured Image from Webcam")
 else:
-    st.write("Please upload the model or ensure the path is correct.")
+    st.write("Please check if the model is loaded or the webcam feed is active.")
