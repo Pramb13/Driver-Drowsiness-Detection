@@ -2,130 +2,196 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-import pinecone
-import numpy as np
-from sklearn.preprocessing import normalize
 import time
+from datetime import datetime
 
-# Access secrets securely from Streamlit secrets
-PINECONE_API_KEY = st.secrets["pinecone"]["api_key"]
-PINECONE_ENVIRONMENT = st.secrets["pinecone"]["environment"]
-INDEX_NAME = st.secrets["pinecone"]["index_name"]
-
-# Initialize the HuggingFace model
+# Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 
-# Load the pre-trained model and feature extractor
+# Apply custom CSS for better UI styling
+st.markdown("""
+    <style>
+        body {
+            background-color: #f0f8ff;
+            color: #333;
+        }
+        .title {
+            font-family: 'Helvetica', sans-serif;
+            color: #0077b6;
+            text-align: center;
+            margin-top: 50px;
+        }
+        .description {
+            text-align: center;
+            font-size: 18px;
+            color: #0077b6;
+            margin-bottom: 30px;
+        }
+        .prediction-container {
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        .prediction-label {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ff6347;
+        }
+        .confidence-score {
+            font-size: 18px;
+            color: #2e8b57;
+        }
+        .result-container {
+            margin-top: 30px;
+            display: flex;
+            justify-content: center;
+        }
+        .image-container {
+            width: 70%;
+            margin-top: 20px;
+        }
+        .camera-feed {
+            margin-bottom: 10px;
+        }
+        .history-container {
+            margin-top: 50px;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        }
+        .history-title {
+            font-size: 22px;
+            font-weight: bold;
+            color: #0077b6;
+            margin-bottom: 15px;
+        }
+        .history-item {
+            margin-bottom: 15px;
+        }
+        .history-item p {
+            margin: 5px 0;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# Initialize the model and feature extractor
+@st.cache_resource  # Cache the model loading to avoid reloading it each time
 def load_model():
     """Load pre-trained model and feature extractor."""
-    model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
-    feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
-    return model, feature_extractor
+    try:
+        model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
+        feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
+        return model, feature_extractor
+    except Exception as e:
+        st.error(f"Error loading model: {e}")
+        return None, None
 
-# Preprocess the image and extract embeddings
+# Preprocess image for the model
 def preprocess_image(image, feature_extractor):
     """Preprocess the image for model prediction."""
     image = image.convert("RGB")
     inputs = feature_extractor(images=image, return_tensors="pt")
     return inputs
 
-# Get the image embeddings
-def get_image_embedding(model, inputs):
-    """Generate image embedding using the model."""
-    with torch.no_grad():
-        outputs = model.get_input_embeddings()(inputs['pixel_values'])
-        embeddings = outputs.mean(dim=1)  # Get the average of the embeddings
-    return embeddings.squeeze().cpu().numpy()
+# Make prediction using the model
+def get_prediction(model, inputs):
+    """Make a prediction using the model and return the predicted class and confidence."""
+    try:
+        with torch.no_grad():
+            outputs = model(**inputs)
+            logits = outputs.logits  # Get the raw prediction scores
+            predicted_class_idx = torch.argmax(logits, dim=-1).item()
+            prediction_score = logits.max().item()  # Highest score value
+        return predicted_class_idx, prediction_score
+    except Exception as e:
+        st.error(f"Prediction error: {e}")
+        return None, None
 
-# Add image embedding to Pinecone
-def add_embedding_to_pinecone(index, embedding, image_id):
-    """Normalize the embedding and add it to Pinecone."""
-    embedding = normalize([embedding])[0]  # Normalize the embedding for Pinecone
-    index.upsert(vectors=[(image_id, embedding)])
+# Store the prediction result in session state
+def store_prediction(predicted_class_idx, prediction_score):
+    """Store the prediction result along with timestamp in session state."""
+    if 'history' not in st.session_state:
+        st.session_state.history = []  # Initialize history if it doesn't exist
 
-# Search Pinecone for similar image embeddings
-def search_similar_embeddings(index, query_embedding, top_k=3):
-    """Normalize the query embedding and search for similar vectors."""
-    query_embedding = normalize([query_embedding])[0]  # Normalize query vector
-    result = index.query([query_embedding], top_k=top_k)
-    return result
+    # Add new prediction with timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    result = {
+        "timestamp": timestamp,
+        "label": LABELS[predicted_class_idx],
+        "confidence": prediction_score
+    }
+    st.session_state.history.append(result)
 
 # Display the image and prediction result
 def display_result(image, predicted_class_idx, prediction_score):
     """Display the image along with the prediction result."""
+    # Display the image and results inside a container
+    st.markdown('<div class="result-container">', unsafe_allow_html=True)
     st.image(image, caption="Captured Image from Webcam", use_container_width=True)
-    prediction_label = LABELS[predicted_class_idx]
-    st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    if predicted_class_idx is not None:
+        prediction_label = LABELS[predicted_class_idx]
+        st.markdown(f'<div class="prediction-container">', unsafe_allow_html=True)
+        st.markdown(f'<p class="prediction-label">{prediction_label}</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="confidence-score">Confidence: {prediction_score:.2f}</p>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# Function to create or access Pinecone index
-def create_pinecone_index():
-    """Check if the index exists and create it if it doesn't."""
-    try:
-        # Initialize Pinecone (important if you haven't already initialized it somewhere else)
-        pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
-
-        # Try to access the index
-        index = pinecone.Index(INDEX_NAME)
-
-        # Check if the index exists (optional: use describe_index_stats() to validate existence)
-        index.describe_index_stats()
-        print(f"Index '{INDEX_NAME}' found!")
-    except Exception as e:
-        print(f"Error: {e}")
-        # Create the index if not exists
-        print(f"Index '{INDEX_NAME}' not found. Creating index...")
-        # Adjust dimension based on your model's output size (e.g., 512 for many transformer models)
-        pinecone.create_index(INDEX_NAME, dimension=1024)
-        index = pinecone.Index(INDEX_NAME)
-
-    return index
-
-# Get the prediction result from the model
-def get_prediction(model, inputs):
-    """Generate prediction from the model for the processed image."""
-    with torch.no_grad():
-        outputs = model(**inputs)
-        logits = outputs.logits
-        predicted_class_idx = logits.argmax(dim=-1).item()  # Get the index of the highest score
-        prediction_score = torch.nn.functional.softmax(logits, dim=-1)[0, predicted_class_idx].item()  # Get the confidence score
-    return predicted_class_idx, prediction_score
+# Display prediction history
+def display_history():
+    """Display the prediction history."""
+    if 'history' in st.session_state and len(st.session_state.history) > 0:
+        st.markdown('<div class="history-container">', unsafe_allow_html=True)
+        st.markdown('<p class="history-title">Prediction History</p>', unsafe_allow_html=True)
+        for item in st.session_state.history:
+            st.markdown(f'<div class="history-item">', unsafe_allow_html=True)
+            st.markdown(f'<p><strong>Timestamp:</strong> {item["timestamp"]}</p>', unsafe_allow_html=True)
+            st.markdown(f'<p><strong>Prediction:</strong> {item["label"]}</p>', unsafe_allow_html=True)
+            st.markdown(f'<p><strong>Confidence:</strong> {item["confidence"]:.2f}</p>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # Main Streamlit interface
 def main():
     """Main function to handle Streamlit interface and prediction process."""
-    # Create Pinecone index (or use an existing one)
-    index = create_pinecone_index()
+    st.markdown('<h1 class="title">Real-Time Drowsiness Detection</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="description">This application uses a deep learning model to detect drowsiness based on images captured from your webcam. Please allow camera access and make sure you are well-lit for accurate results.</p>', unsafe_allow_html=True)
 
     # Load model and feature extractor
     model, feature_extractor = load_model()
 
+    if model is None or feature_extractor is None:
+        st.error("Failed to load the model. Please check your internet connection or try again later.")
+        return
+
     # Capture image from webcam
-    camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
-    
+    camera_input = st.camera_input("Webcam feed for real-time drowsiness detection", key="camera_input")
+
     if camera_input is not None:
-        # Load and preprocess image
-        img = Image.open(camera_input)
-        inputs = preprocess_image(img, feature_extractor)
+        # Show loading indicator while processing
+        with st.spinner("Processing..."):
+            time.sleep(1)  # Simulate a small delay for better UX
+            img = Image.open(camera_input)
 
-        # Get image embedding
-        embedding = get_image_embedding(model, inputs)
+            # Preprocess image
+            inputs = preprocess_image(img, feature_extractor)
 
-        # Generate a unique image ID (e.g., timestamp or random string)
-        image_id = f"img-{int(time.time())}"  # Using current timestamp for uniqueness
-        add_embedding_to_pinecone(index, embedding, image_id)
+            # Get prediction
+            predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
-        # Get prediction (optional)
-        predicted_class_idx, prediction_score = get_prediction(model, inputs)
+            # Store the result in history
+            store_prediction(predicted_class_idx, prediction_score)
 
-        # Display the image and prediction result
-        display_result(img, predicted_class_idx, prediction_score)
+            # Display the result
+            display_result(img, predicted_class_idx, prediction_score)
 
-        # Optionally search for similar images in Pinecone (for demonstration)
-        similar_results = search_similar_embeddings(index, embedding)
-        st.write("Similar Images Found in Pinecone:")
-        for result in similar_results['matches']:
-            st.write(f"ID: {result['id']}, Score: {result['score']}")
+    # Display prediction history
+    display_history()
 
 if __name__ == "__main__":
     main()
+
