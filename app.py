@@ -2,7 +2,7 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-import pinecone
+from pinecone import Pinecone as PineconeClient
 import numpy as np
 import os
 
