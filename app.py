@@ -57,18 +57,22 @@ def display_result(image, predicted_class_idx, prediction_score):
     prediction_label = LABELS[predicted_class_idx]
     st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
 
-# Function to create Pinecone index (or use an existing one)
+# Function to create or access Pinecone index
 def create_pinecone_index():
     """Check if the index exists and create it if it doesn't."""
-    # Pinecone initialization happens automatically through Streamlit secrets management
-    index = pinecone.Index(INDEX_NAME)
-    
-    # Check if the index exists and create it if not
     try:
-        # Checking the status of the index
+        # Initialize Pinecone (important if you haven't already initialized it somewhere else)
+        pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+
+        # Try to access the index
+        index = pinecone.Index(INDEX_NAME)
+
+        # Check if the index exists (optional: use describe_index_stats() to validate existence)
         index.describe_index_stats()
-        print(f"Index '{INDEX_NAME}' already exists.")
+        print(f"Index '{INDEX_NAME}' found!")
     except Exception as e:
+        print(f"Error: {e}")
+        # Create the index if not exists
         print(f"Index '{INDEX_NAME}' not found. Creating index...")
         # Adjust dimension based on your model's output size (e.g., 512 for many transformer models)
         pinecone.create_index(INDEX_NAME, dimension=512)
