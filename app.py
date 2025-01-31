@@ -9,8 +9,6 @@ model_name = "facebook/dino-vits16"  # Example model for image classification
 model = AutoModelForImageClassification.from_pretrained(model_name)
 feature_extractor = AutoFeatureExtractor.from_pretrained(model_name)
 
-# Display model details
-st.write(f"Loaded model: {model_name}")
 
 # Load an image from webcam
 camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
@@ -33,10 +31,8 @@ if camera_input is not None:
     # Display the image and prediction
     st.image(img, caption="Captured Image from Webcam", use_container_width=True)
 
-    # Interpretation of the result (customize this based on your labels)
-    # Assuming Class 0 is "Not Drowsy" and Class 1 is "Drowsy"
+    # Interpretation of the result
     if predicted_class_idx == 0:
-        st.write(f"Prediction: Not Drowsy with score {prediction_score:.2f}")
+        st.write(f"Prediction: Not Drowsy with confidence {prediction_score:.2f}")
     else:
-        st.write(f"Prediction: Drowsy with score {prediction_score:.2f}")
-
+        st.write(f"Prediction: Drowsy with confidence {prediction_score:.2f}")
