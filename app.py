@@ -24,6 +24,7 @@ class DrowsinessDetection:
         """Initialize Pinecone client and ensure the index exists"""
         try:
             self.index_name = "imageembedding"  # Your Pinecone index name
+            st.write("Initializing Pinecone client...")  # Debugging log
 
             # Initialize Pinecone client
             pinecone.init(api_key=os.getenv('PINECONE_API_KEY'), environment=pinecone_environment)
@@ -34,7 +35,7 @@ class DrowsinessDetection:
                 st.write(f"Creating index {self.index_name}...")
                 pinecone.create_index(
                     name=self.index_name,
-                    dimension=1024,  # Ensure this matches the vector size
+                    dimension=1024,  # Updated dimension size to 1024
                     metric='cosine',  # Using cosine distance for vector similarity
                 )
                 st.write(f"Index '{self.index_name}' created.")
@@ -49,29 +50,32 @@ class DrowsinessDetection:
 
     def store_in_pinecone(self, image, predicted_class_idx, prediction_score):
         """Store image prediction data in Pinecone."""
-        feature_vector = self.extract_image_features(image)  # Extract image features
+        try:
+            feature_vector = self.extract_image_features(image)  # Extract image features
 
-        # Prepare metadata and generate unique vector ID
-        metadata = {
-            "class": LABELS[predicted_class_idx],
-            "score": prediction_score,
-        }
-        vector_id = str(np.random.randint(0, 1000000))  # Generate a random ID
+            # Prepare metadata and generate unique vector ID
+            metadata = {
+                "class": LABELS[predicted_class_idx],
+                "score": prediction_score,
+            }
+            vector_id = str(np.random.randint(0, 1000000))  # Generate a random ID
 
-        # Create the vector with the ID, feature vector, and metadata
-        vector = {
-            "id": vector_id,
-            "values": feature_vector.tolist(),  # Ensure it's a list for Pinecone
-            "metadata": metadata
-        }
+            # Create the vector with the ID, feature vector, and metadata
+            vector = {
+                "id": vector_id,
+                "values": feature_vector.tolist(),  # Ensure it's a list for Pinecone
+                "metadata": metadata
+            }
 
-        # Upsert the vector into the Pinecone index
-        upsert_response = self.index.upsert(
-            vectors=[vector],
-            namespace="ns1"  # Using "ns1" as the namespace
-        )
-        st.write(f"Upserted data with ID: {vector_id}")
-        return upsert_response
+            # Upsert the vector into the Pinecone index
+            upsert_response = self.index.upsert(
+                vectors=[vector],
+                namespace="ns1"  # Using "ns1" as the namespace
+            )
+            st.write(f"Upserted data with ID: {vector_id}")
+            return upsert_response
+        except Exception as e:
+            st.write(f"Error during upsert: {e}")  # Debugging log
 
     def extract_image_features(self, image):
         """Extract features from the image using the model's feature extractor."""
