@@ -1,55 +1,62 @@
 import streamlit as st
-import torch
-from transformers import AutoModelForImageClassification, AutoFeatureExtractor
-from PIL import Image
+import cv2
 import numpy as np
+from transformers import AutoModelForImageClassification, AutoFeatureExtractor
+from pinecone import Pinecone, ServerlessSpec
+import torch
+from PIL import Image
 import os
-import pinecone  # Import pinecone correctly
+import time
 
-# Set Hugging Face API key and Pinecone API key from Streamlit secrets
+# Set environment variables for Pinecone and Hugging Face
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
 os.environ['PINECONE_API_KEY'] = st.secrets["pinecone"]["api_key"]
 
 # Constants
-MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
-LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
+MODEL_NAME = "facebook/dino-vits16"  # You can use another model suited for drowsiness detection
+LABELS = ["Not Drowsy", "Drowsy"]  # Drowsiness detection labels
 
-# Fetch Pinecone API key, index name, and environment securely from Streamlit secrets
+# Pinecone Configuration
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
-pinecone_environment = st.secrets["pinecone"]["environment"]
+INDEX_NAME = "drowsiness_detection"  # You can change this name
+pinecone_environment = "us-west1-gcp"
 
-# Initialize Pinecone Client
+# Initialize Pinecone client
 class DrowsinessDetection:
     def __init__(self):
         try:
             st.write("Initializing Drowsiness Detection...")
-            # Initialize Pinecone connection using pinecone.init
-            pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
-            self.index_name = INDEX_NAME  # Index name from Streamlit secrets
+
+            # Create an instance of the Pinecone client
+            self.pc = Pinecone(api_key=PINECONE_API_KEY)
             
             # Check if the index exists, create if it doesn't
-            if self.index_name not in pinecone.list_indexes():
-                st.write(f"Creating Pinecone index: {self.index_name}")
-                pinecone.create_index(
-                    name=self.index_name,
-                    dimension=1024,  # The dimension of the embeddings (match this with model output)
+            if INDEX_NAME not in self.pc.list_indexes().names():
+                st.write(f"Creating Pinecone index: {INDEX_NAME}")
+                self.pc.create_index(
+                    name=INDEX_NAME,
+                    dimension=1024,  # Adjust to your model's output dimension
                     metric='cosine',
+                    spec=ServerlessSpec(
+                        cloud='aws',
+                        region='us-east-1'
+                    )
                 )
-                st.write(f"Index '{self.index_name}' created.")
+                st.write(f"Index '{INDEX_NAME}' created.")
             else:
-                st.write(f"Index '{self.index_name}' already exists.")
+                st.write(f"Index '{INDEX_NAME}' already exists.")
             
-            # Assign the Pinecone index
-            self.index = pinecone.Index(self.index_name)  # Corrected way to access the index
+            # Access the index
+            self.index = self.pc.Index(INDEX_NAME)  # Access Pinecone index
+            
             st.write("Pinecone index is set.")
         
         except Exception as e:
             st.error(f"Error initializing Pinecone: {e}")
-            raise  # Raise the exception to prevent further execution if initialization fails
+            raise  # Raise the exception if initialization fails
 
     def load_model(self):
-        """Load pre-trained model and feature extractor."""
+        """Load the pre-trained HuggingFace model and feature extractor."""
         model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
         feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
         return model, feature_extractor
@@ -60,8 +67,7 @@ class DrowsinessDetection:
         inputs = feature_extractor(images=image, return_tensors="pt")
         with torch.no_grad():
             outputs = model(**inputs)
-            feature_vector = outputs.logits  # Raw features from the model (logits)
-            feature_vector = feature_vector.squeeze().cpu().numpy()  # Ensure it's a 1D numpy array
+            feature_vector = outputs.logits.squeeze().cpu().numpy()
         return feature_vector
 
     def store_in_pinecone(self, image, predicted_class_idx, prediction_score):
@@ -84,12 +90,12 @@ class DrowsinessDetection:
         }
 
         # Generate unique vector ID
-        vector_id = str(np.random.randint(0, 1000000))  # Generate a random ID
+        vector_id = str(np.random.randint(0, 1000000))
 
         # Create the vector with the ID, feature vector, and metadata
         vector = {
             "id": vector_id,
-            "values": feature_vector.tolist(),  # Ensure it's a list for Pinecone
+            "values": feature_vector.tolist(),
             "metadata": metadata
         }
 
@@ -97,7 +103,7 @@ class DrowsinessDetection:
             # Upsert the vector into the Pinecone index
             upsert_response = self.index.upsert(
                 vectors=[vector],
-                namespace="ns1"  # Using "ns1" as the namespace
+                namespace="ns1"  # Example namespace
             )
             st.write(f"Upserted data with ID: {vector_id}")
             st.write(f"Upsert response: {upsert_response}")
@@ -114,48 +120,51 @@ class DrowsinessDetection:
         """Make a prediction using the model and return the predicted class and confidence."""
         with torch.no_grad():
             outputs = model(**inputs)
-            logits = outputs.logits  # Get the raw prediction scores
+            logits = outputs.logits  # Get raw prediction scores
             predicted_class_idx = torch.argmax(logits, dim=-1).item()
-            prediction_score = logits.max().item()  # Highest score value
+            prediction_score = logits.max().item()  # Highest score
         return predicted_class_idx, prediction_score
 
-    def display_result(self, image, predicted_class_idx, prediction_score):
-        """Display the image along with the prediction result."""
-        st.image(image, caption="Captured Image from Webcam", use_container_width=True)
-        prediction_label = LABELS[predicted_class_idx]
-        st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
+    def detect_drowsiness(self, image):
+        """Detect if the driver is drowsy."""
+        model, feature_extractor = self.load_model()
+        inputs = self.preprocess_image(image, feature_extractor)
+        predicted_class_idx, prediction_score = self.get_prediction(model, inputs)
+        return predicted_class_idx, prediction_score
 
-# Main Streamlit interface
-def main():
-    """Main function to handle Streamlit interface and prediction process."""
-    try:
-        # Initialize DrowsinessDetection object
-        st.write("Creating DrowsinessDetector instance...")
-        drowsiness_detector = DrowsinessDetection()
-        st.write("DrowsinessDetector instance created.")
+# Streamlit interface
+st.title("Driver Drowsiness Detection System")
 
-        # Load model and feature extractor
-        model, feature_extractor = drowsiness_detector.load_model()
+# Initialize the detection system
+drowsiness_detector = DrowsinessDetection()
 
-        # Capture image from webcam
-        camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
-        
-        if camera_input is not None:
-            # Load and preprocess image
-            img = Image.open(camera_input)
-            inputs = drowsiness_detector.preprocess_image(img, feature_extractor)
+# Capture video from the webcam
+cap = cv2.VideoCapture(0)
 
-            # Get prediction
-            predicted_class_idx, prediction_score = drowsiness_detector.get_prediction(model, inputs)
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        st.error("Failed to grab frame from webcam")
+        break
 
-            # Store the result in Pinecone
-            drowsiness_detector.store_in_pinecone(img, predicted_class_idx, prediction_score)
+    # Convert frame to PIL image for processing
+    image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
-            # Display the image and prediction result
-            drowsiness_detector.display_result(img, predicted_class_idx, prediction_score)
+    # Detect drowsiness
+    predicted_class_idx, prediction_score = drowsiness_detector.detect_drowsiness(image)
 
-    except Exception as e:
-        st.error(f"An error occurred in the main function: {e}")
+    # Display the result
+    st.image(image, caption="Driver's face", use_column_width=True)
+    st.write(f"Prediction: {LABELS[predicted_class_idx]}")
+    st.write(f"Confidence score: {prediction_score:.2f}")
 
-if __name__ == "__main__":
-    main()
+    # Store the result in Pinecone
+    drowsiness_detector.store_in_pinecone(image, predicted_class_idx, prediction_score)
+
+    # Break the loop if 'q' is pressed (for testing purposes)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Release the webcam when done
+cap.release()
+cv2.destroyAllWindows()
