@@ -21,7 +21,6 @@ pinecone_environment = st.secrets["pinecone"]["environment"]
 
 # Initialize Pinecone client
 pc = PineconeClient(api_key=PINECONE_API_KEY)
-pc.init(environment=pinecone_environment)
 
 # Create the index if it doesn't exist
 if INDEX_NAME not in pc.list_indexes().names():
