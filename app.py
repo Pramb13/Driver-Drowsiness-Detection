@@ -5,6 +5,7 @@ from PIL import Image
 import numpy as np
 import os
 from pinecone import Pinecone as PineconeClient
+import time
 
 # Set Hugging Face API key and Pinecone API key from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
@@ -13,73 +14,69 @@ os.environ['PINECONE_API_KEY'] = st.secrets["pinecone"]["api_key"]
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
+INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to Pinecone index
 
-# Fetch Pinecone API key, index name, and environment securely from Streamlit secrets
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
-pinecone_environment = st.secrets["pinecone"]["environment"]
+# Initialize Pinecone client
+class PineconeHandler:
+    def __init__(self):
+        self.index_name = "imageembedding"  # Update this if you want a different name for the image index
+        self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
 
-# Pinecone Setup for text embedding
-def setup_pinecone_index():
-    """Initialize Pinecone index for image embeddings."""
-    pc = PineconeClient(api_key=PINECONE_API_KEY)
-    index_name = "textembedding"
+        # Check if the Pinecone index exists, otherwise create one
+        if self.index_name not in self.pc.list_indexes().names():
+            self.pc.create_index(
+                name=self.index_name,
+                dimension=1024,  # Set the same dimension as the model output (ensure this matches the model)
+                metric='cosine',  # Metric is cosine for similarity-based search
+            )
+            st.write(f"Index '{self.index_name}' created.")
+        else:
+            st.write(f"Index '{self.index_name}' already exists.")
+        
+        self.index = self.pc.Index(self.index_name)
     
-    # Check if the index exists, if not, create it
-    if index_name not in pc.list_indexes().names():
-        pc.create_index(
-            name=index_name,
-            dimension=1024,  # Matching the dimension of the Pinecone index
-            metric='cosine',
-        )
-        st.write(f"Index '{index_name}' created.")
-    else:
-        st.write(f"Index '{index_name}' already exists.")
+    def store_embeddings(self, embeddings, metadata, retries=3, delay=2):
+        """Store embeddings in Pinecone."""
+        upsert_data = []
+        for i, embedding in enumerate(embeddings):
+            if isinstance(embedding, np.ndarray):
+                embedding = embedding.tolist()
 
-    return pc.Index(index_name)
+            # Generate unique ID for each image embedding
+            id = f"image-{i}"
+            metadata_dict = metadata[i] if isinstance(metadata[i], dict) else {}
 
-# Load model and feature extractor for image classification
+            # Prepare the data for upsert
+            upsert_data.append((id, embedding, metadata_dict))
+
+        # Attempt to upsert embeddings into Pinecone
+        for attempt in range(retries):
+            try:
+                response = self.index.upsert(vectors=upsert_data)
+                st.write(f"Upsert response: {response}")
+
+                if response.get("upserted", 0) > 0:
+                    st.write(f"Successfully upserted {response['upserted']} vectors.")
+                else:
+                    st.error("No vectors were upserted.")
+                break
+            except Exception as e:
+                st.error(f"Error during Pinecone upsert: {str(e)}")
+                if attempt < retries - 1:
+                    st.write(f"Retrying in {delay} seconds...")
+                    time.sleep(delay)
+                else:
+                    st.error("Max retries reached. Please check the service status.")
+
+
+# Load Hugging Face model and feature extractor
 def load_model():
     """Load pre-trained model and feature extractor."""
     model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Store data in Pinecone (for image embeddings)
-def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
-    """Store image prediction data in Pinecone."""
-    feature_vector = extract_image_features(image)  # Extract image features
-    
-    # Debugging print
-    print(f"Feature vector shape: {feature_vector.shape}")  # Check if the shape is correct
-    
-    # Prepare metadata and generate unique vector ID
-    metadata = {
-        "class": LABELS[predicted_class_idx],
-        "score": prediction_score,
-    }
-    vector_id = str(np.random.randint(0, 1000000))  # Generate a random ID
 
-    # Create the vector with the ID, feature vector, and metadata
-    vector = {
-        "id": vector_id,
-        "values": feature_vector.tolist(),  # Ensure it's a list for Pinecone
-        "metadata": metadata
-    }
-
-    # Upsert the vector into the Pinecone index
-    try:
-        upsert_response = index.upsert(
-            vectors=[vector],
-            namespace="ns1"  # Using "ns1" as the namespace
-        )
-        st.write(f"Upserted data with ID: {vector_id}")
-    except Exception as e:
-        st.write(f"Error while upserting data: {str(e)}")  # Catch the error and print it
-        print(f"Error during upsert: {str(e)}")  # For detailed error logging
-    return upsert_response
-
-# Extract image features for embedding
 def extract_image_features(image):
     """Extract features from the image using the model's feature extractor."""
     model, feature_extractor = load_model()
@@ -88,44 +85,15 @@ def extract_image_features(image):
         outputs = model(**inputs)
         feature_vector = outputs.logits  # Raw features from the model (logits)
         feature_vector = feature_vector.squeeze().cpu().numpy()  # Ensure it's a 1D numpy array
-        # Ensure that the dimension matches Pinecone index dimension (1024)
-        if feature_vector.shape[0] != 1024:
-            # Here you can adjust the vector size to match Pinecone dimension if needed
-            # A typical approach would be to use a model that generates the correct dimension
-            raise ValueError(f"Feature vector has incorrect dimension. Expected 1024, got {feature_vector.shape[0]}")
     return feature_vector  # Return the numpy array
 
-# Preprocess image for the model
-def preprocess_image(image, feature_extractor):
-    """Preprocess the image for model prediction."""
-    image = image.convert("RGB")
-    inputs = feature_extractor(images=image, return_tensors="pt")
-    return inputs
 
-# Make prediction using the model
-def get_prediction(model, inputs):
-    """Make a prediction using the model and return the predicted class and confidence."""
-    with torch.no_grad():
-        outputs = model(**inputs)
-        logits = outputs.logits  # Get the raw prediction scores
-        predicted_class_idx = torch.argmax(logits, dim=-1).item()
-        prediction_score = logits.max().item()  # Highest score value
-    return predicted_class_idx, prediction_score
-
-# Display the image and prediction result
-def display_result(image, predicted_class_idx, prediction_score):
-    """Display the image along with the prediction result."""
-    st.image(image, caption="Captured Image from Webcam", use_container_width=True)
-    prediction_label = LABELS[predicted_class_idx]
-    st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
-
-# Main Streamlit interface
 def main():
     """Main function to handle Streamlit interface and prediction process."""
-    # Set up Pinecone index
-    index = setup_pinecone_index()
+    # Initialize Pinecone handler
+    pinecone_handler = PineconeHandler()
 
-    # Load model and feature extractor
+    # Load the model and feature extractor
     model, feature_extractor = load_model()
 
     # Capture image from webcam
@@ -134,16 +102,29 @@ def main():
     if camera_input is not None:
         # Load and preprocess image
         img = Image.open(camera_input)
-        inputs = preprocess_image(img, feature_extractor)
 
-        # Get prediction
-        predicted_class_idx, prediction_score = get_prediction(model, inputs)
+        # Extract features from the image
+        image_embedding = extract_image_features(img)
 
-        # Store the result in Pinecone
-        store_in_pinecone(index, img, predicted_class_idx, prediction_score)
+        # Prediction (Optional: Here, you can implement prediction logic)
+        # For example, classify the image and get the class label (drowsy or not)
+        inputs = feature_extractor(images=img, return_tensors="pt")
+        with torch.no_grad():
+            outputs = model(**inputs)
+            logits = outputs.logits
+            predicted_class_idx = torch.argmax(logits, dim=-1).item()
+            prediction_score = logits.max().item()  # Highest score value
+
+        # Prepare metadata for Pinecone storage
+        metadata = [{"class": LABELS[predicted_class_idx], "score": prediction_score}]
+        
+        # Store the image embedding and metadata in Pinecone
+        pinecone_handler.store_embeddings([image_embedding], metadata)
 
         # Display the image and prediction result
-        display_result(img, predicted_class_idx, prediction_score)
+        st.image(img, caption="Captured Image from Webcam", use_container_width=True)
+        prediction_label = LABELS[predicted_class_idx]
+        st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
 
 if __name__ == "__main__":
     main()
