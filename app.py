@@ -4,6 +4,7 @@ import pandas as pd
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 import time
+from datetime import datetime
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"
@@ -52,7 +53,13 @@ def display_result(image, predicted_class_idx, prediction_score):
     if predicted_class_idx is not None:
         prediction_label = LABELS[predicted_class_idx]
         st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
-        st.session_state["predictions"].append({"Prediction": prediction_label, "Confidence Score": prediction_score})
+        # Add current timestamp to the prediction entry
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state["predictions"].append({
+            "Prediction": prediction_label, 
+            "Confidence Score": prediction_score,
+            "Timestamp": timestamp
+        })
     else:
         st.write("Error: Could not make a prediction.")
 
@@ -100,7 +107,7 @@ def main():
                 display_result(img, predicted_class_idx, prediction_score)
     else:
         st.title("Admin Dashboard")
-        st.write("Below are the recorded predictions: ")
+        st.write("Below are the recorded predictions with date and time:")
         if st.session_state["predictions"]:
             df = pd.DataFrame(st.session_state["predictions"])
             st.dataframe(df)
