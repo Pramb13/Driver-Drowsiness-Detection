@@ -4,7 +4,7 @@ from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 import numpy as np
 import os
-import pinecone  # Correct Pinecone import
+import pinecone
 
 # Set Hugging Face API key and Pinecone API key from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
@@ -20,13 +20,13 @@ INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pineco
 pinecone_environment = st.secrets["pinecone"]["environment"]
 
 # Initialize Pinecone client
-pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)  # Correct method to initialize Pinecone
+pc = pinecone.Client(api_key=PINECONE_API_KEY, environment=pinecone_environment)
 
 # Create the index if it doesn't exist
-if INDEX_NAME not in pinecone.list_indexes():
-    pinecone.create_index(
+if INDEX_NAME not in pc.list_indexes():
+    pc.create_index(
         name=INDEX_NAME,
-        dimension=1024,  # Ensure this matches the vector size
+        dimension=384,  # Ensure this matches the vector size
         metric='cosine',  # Using cosine distance for vector similarity
     )
     st.write(f"Index '{INDEX_NAME}' created.")
@@ -34,7 +34,7 @@ else:
     st.write(f"Index '{INDEX_NAME}' already exists.")
 
 # Access the index
-index = pinecone.Index(INDEX_NAME)
+index = pc.Index(INDEX_NAME)
 
 # Initialize the model and feature extractor
 def load_model():
