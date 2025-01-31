@@ -3,3 +3,4 @@ numpy
 streamlit
 keras
 tensorflow
+h5py
