@@ -19,7 +19,7 @@ def create_pinecone_index():
     if INDEX_NAME not in pinecone.indexes():  # Corrected line
         print(f"Index '{INDEX_NAME}' not found. Creating index...")
         # Dimension must match the size of the image embeddings (e.g., 512 for many transformer models)
-        pinecone.create_index(INDEX_NAME, dimension=512)  # Adjust dimension based on your model's output size
+        pinecone.create_index(INDEX_NAME, dimension=1024)  # Adjust dimension based on your model's output size
     else:
         print(f"Index '{INDEX_NAME}' already exists.")
     
