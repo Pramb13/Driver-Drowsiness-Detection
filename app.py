@@ -21,7 +21,7 @@ def load_model():
     return model, feature_extractor
 
 # Store data in Pinecone
-def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
+def store_in_pinecone(INDEX_NAME, image, predicted_class_idx, prediction_score):
     """Store image prediction data in Pinecone."""
     # Convert image to a vector (using feature extractor or model)
     feature_vector = extract_image_features(image)  # Extract image features from model
@@ -89,7 +89,7 @@ def main():
         predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
         # Store the result in Pinecone
-        store_in_pinecone(index, img, predicted_class_idx, prediction_score)
+        store_in_pinecone(INDEX_NAME, img, predicted_class_idx, prediction_score)
 
         # Display the image and prediction result
         display_result(img, predicted_class_idx, prediction_score)
