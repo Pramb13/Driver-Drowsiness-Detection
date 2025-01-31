@@ -2,83 +2,89 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-from datetime import datetime
-import pandas as pd
+import pinecone
+import numpy as np
+import os
+
+# Set Hugging Face API key and Pinecone API key from Streamlit secrets
+os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
+os.environ['PINECONE_API_KEY'] = st.secrets["pinecone"]["api_key"]
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 
-# Apply custom CSS for better UI styling
-st.markdown("""
-    <style>
-        body {
-            background-color: #f0f8ff;
-            color: #333;
-        }
-        .title {
-            font-family: 'Helvetica', sans-serif;
-            color: #0077b6;
-            text-align: center;
-            margin-top: 50px;
-        }
-        .description {
-            text-align: center;
-            font-size: 18px;
-            color: #0077b6;
-            margin-bottom: 30px;
-        }
-        .prediction-container {
-            background-color: #ffffff;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
-            text-align: center;
-        }
-        .prediction-label {
-            font-size: 24px;
-            font-weight: bold;
-            color: #ff6347;
-        }
-        .confidence-score {
-            font-size: 18px;
-            color: #2e8b57;
-        }
-        .result-container {
-            margin-top: 30px;
-            display: flex;
-            justify-content: center;
-        }
-        .image-container {
-            width: 70%;
-            margin-top: 20px;
-        }
-        .camera-feed {
-            margin-bottom: 10px;
-        }
-        .history-container {
-            margin-top: 50px;
-            padding: 20px;
-            background-color: #ffffff;
-            border-radius: 10px;
-            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
-        }
-        .history-title {
-            font-size: 22px;
-            font-weight: bold;
-            color: #0077b6;
-            margin-bottom: 15px;
-        }
-    </style>
-""", unsafe_allow_html=True)
+# Fetch Pinecone API key, index name, and environment securely from Streamlit secrets
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
+pinecone_environment = st.secrets["pinecone"]["environment"]
 
-# Initialize the model and feature extractor
-@st.cache_resource  # Cache the model loading to avoid reloading it each time
-def load_model():
-    """Load pre-trained model and feature extractor."""
-    model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
-    feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
-    return model, feature_extractor
+class DrowsinessDetection:
+    def __init__(self):
+        """Initialize Pinecone client and ensure the index exists"""
+        try:
+            self.index_name = "imageembedding"  # Your Pinecone index name
+
+            # Initialize Pinecone client
+            pinecone.init(api_key=os.getenv('PINECONE_API_KEY'), environment=pinecone_environment)
+
+            # Check if index exists; create if not
+            if self.index_name not in pinecone.list_indexes():
+                pinecone.create_index(
+                    name=self.index_name,
+                    dimension=1024,  # Ensure this matches the vector size from your model
+                    metric='cosine',  # Using cosine distance for vector similarity
+                )
+                st.write(f"Index '{self.index_name}' created.")
+            else:
+                st.write(f"Index '{self.index_name}' already exists.")
+
+            # Access the index
+            self.index = pinecone.Index(self.index_name)
+        except Exception as e:
+            st.write(f"Error initializing Pinecone: {e}")
+
+    def store_in_pinecone(self, image, predicted_class_idx, prediction_score):
+        """Store image prediction data in Pinecone."""
+        feature_vector = self.extract_image_features(image)  # Extract image features
+
+        # Prepare metadata and generate unique vector ID
+        metadata = {
+            "class": LABELS[predicted_class_idx],
+            "score": prediction_score,
+        }
+        vector_id = str(np.random.randint(0, 1000000))  # Generate a random ID
+
+        # Create the vector with the ID, feature vector, and metadata
+        vector = {
+            "id": vector_id,
+            "values": feature_vector.tolist(),  # Ensure it's a list for Pinecone
+            "metadata": metadata
+        }
+
+        # Upsert the vector into the Pinecone index
+        upsert_response = self.index.upsert(
+            vectors=[vector],
+            namespace="ns1"  # Using "ns1" as the namespace
+        )
+        st.write(f"Upserted data with ID: {vector_id}")
+        return upsert_response
+
+    def extract_image_features(self, image):
+        """Extract features from the image using the model's feature extractor."""
+        model, feature_extractor = self.load_model()
+        inputs = feature_extractor(images=image, return_tensors="pt")
+        with torch.no_grad():
+            outputs = model(**inputs)
+            feature_vector = outputs.logits  # Raw features from the model (logits)
+            feature_vector = feature_vector.squeeze().cpu().numpy()  # Ensure it's a 1D numpy array
+        return feature_vector  # Return the numpy array
+
+    def load_model(self):
+        """Load pre-trained model and feature extractor."""
+        model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
+        feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
+        return model, feature_extractor
 
 # Preprocess image for the model
 def preprocess_image(image, feature_extractor):
@@ -97,98 +103,50 @@ def get_prediction(model, inputs):
         prediction_score = logits.max().item()  # Highest score value
     return predicted_class_idx, prediction_score
 
-# Store user prediction history
-def store_prediction(username, label, confidence):
-    """Store prediction history in user records"""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    if username not in user_records:
-        user_records[username] = []
-    user_records[username].append({"timestamp": timestamp, "label": label, "confidence": confidence})
+# Display the image and prediction result
+def display_result(image, predicted_class_idx, prediction_score):
+    """Display the image along with the prediction result."""
+    st.image(image, caption="Captured Image from Webcam", use_container_width=True)
+    prediction_label = LABELS[predicted_class_idx]
+    st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
 
-# Capture and display webcam feed
-def webcam_feed(model, feature_extractor, username):
-    """Capture webcam feed and make predictions in real-time."""
-    camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
-    
-    if camera_input:
-        img = Image.open(camera_input)
-        inputs = preprocess_image(img, feature_extractor)
-        
-        # Get prediction
-        predicted_class_idx, prediction_score = get_prediction(model, inputs)
-        
-        # Display prediction result
-        st.image(img, caption="Captured Image from Webcam", use_container_width=True)
-        prediction_label = LABELS[predicted_class_idx]
-        st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
-        
-        # Store prediction in user history
-        store_prediction(username, prediction_label, prediction_score)
-
-# Admin page to view all users' prediction records
-def admin_page():
-    st.title("Admin Dashboard")
-    
-    # Display all user records
-    st.subheader("All User Prediction Records")
-    
-    # Create a table for records
-    if user_records:
-        all_records = []
-        for username, records in user_records.items():
-            for record in records:
-                all_records.append({"username": username, "timestamp": record["timestamp"], "label": record["label"], "confidence": record["confidence"]})
-        
-        df = pd.DataFrame(all_records)
-        st.dataframe(df)  # Display the records as a table
-    else:
-        st.write("No records available yet.")
-
-# User page to view personal prediction records
-def user_page(username):
-    st.title(f"{username}'s Prediction History")
-    
-    # Display user-specific records
-    if username in user_records and user_records[username]:
-        records = user_records[username]
-        df = pd.DataFrame(records)
-        st.dataframe(df)  # Display the user's records as a table
-    else:
-        st.write("No predictions available for this user.")
-
-# Main function for the app
+# Main Streamlit interface
 def main():
-    # Display login form
-    st.title("Drowsiness Detection App")
+    """Main function to handle Streamlit interface and prediction process."""
+    
+    # Sidebar - Select User or Admin
+    user_type = st.sidebar.selectbox("Select Role", ["User", "Admin"])
 
-    # Create a login form
-    st.subheader("Please log in to continue")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    login_button = st.button("Login")
-
-    if login_button:
-        role = authenticate(username, password)
+    if user_type == "User":
+        st.title("Driver Drowsiness Detection - User Mode")
         
-        if role is None:
-            st.error("Invalid credentials! Please try again.")
-        else:
-            # Login successful, redirect user based on role
-            st.session_state.username = username  # Store username in session
-            if role == "admin":
-                st.session_state.role = "admin"
-                admin_page()  # Show admin dashboard
-            elif role == "user":
-                st.session_state.role = "user"
-                st.success(f"Welcome {username}!")
-                webcam_feed(load_model()[0], load_model()[1], username)  # Real-time prediction for the user
+        # Initialize DrowsinessDetection class
+        drowsiness_detector = DrowsinessDetection()
 
-    # If the user is already logged in, show the user or admin page
-    if "username" in st.session_state:
-        if st.session_state.role == "admin":
-            admin_page()
-        elif st.session_state.role == "user":
-            user_page(st.session_state.username)
+        # Load model and feature extractor
+        model, feature_extractor = drowsiness_detector.load_model()
+
+        # Capture image from webcam
+        camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
+        
+        if camera_input is not None:
+            # Load and preprocess image
+            img = Image.open(camera_input)
+            inputs = preprocess_image(img, feature_extractor)
+
+            # Get prediction
+            predicted_class_idx, prediction_score = get_prediction(model, inputs)
+
+            # Store the result in Pinecone
+            drowsiness_detector.store_in_pinecone(img, predicted_class_idx, prediction_score)
+
+            # Display the image and prediction result
+            display_result(img, predicted_class_idx, prediction_score)
+        
+    elif user_type == "Admin":
+        st.title("Admin Dashboard")
+        st.write("This is the admin dashboard. You can manage the drowsiness detection model, view analytics, or perform other admin tasks.")
+        # Add admin functionality here (for example: view stored data, manage model, etc.)
 
 if __name__ == "__main__":
     main()
