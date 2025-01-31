@@ -6,32 +6,34 @@ import pinecone
 import numpy as np
 from sklearn.preprocessing import normalize
 
-# Constants
-MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
-LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
+# Access Pinecone secrets securely from Streamlit secrets
+PINECONE_API_KEY = st.secrets["pinecone"]["api_key"]
+PINECONE_ENVIRONMENT = st.secrets["pinecone"]["environment"]
+INDEX_NAME = st.secrets["pinecone"]["index_name"]
 
 # Initialize Pinecone
-PINECONE_API_KEY = "your_pinecone_api_key"
-PINECONE_ENVIRONMENT = "us-east-1"  # or your environment region
-INDEX_NAME = "imageembedding"  # The name of your Pinecone index
-
 pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
 index = pinecone.Index(INDEX_NAME)  # Connect to your index
 
-# Initialize the model and feature extractor
+# Initialize the HuggingFace model
+MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
+LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
+
+# Load the pre-trained model and feature extractor
 def load_model():
     """Load pre-trained model and feature extractor."""
     model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Preprocess image for the model and generate embeddings
+# Preprocess the image and extract embeddings
 def preprocess_image(image, feature_extractor):
     """Preprocess the image for model prediction."""
     image = image.convert("RGB")
     inputs = feature_extractor(images=image, return_tensors="pt")
     return inputs
 
+# Get the image embeddings
 def get_image_embedding(model, inputs):
     """Generate image embedding using the model."""
     with torch.no_grad():
@@ -76,17 +78,17 @@ def main():
         # Get image embedding
         embedding = get_image_embedding(model, inputs)
 
-        # Add image embedding to Pinecone (if you want to store it)
+        # Add image embedding to Pinecone
         image_id = "unique_image_id"  # Generate a unique image ID or use timestamp
         add_embedding_to_pinecone(embedding, image_id)
 
-        # Get prediction (optional, depending on your model)
+        # Get prediction (optional)
         predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
         # Display the image and prediction result
         display_result(img, predicted_class_idx, prediction_score)
 
-        # Search for similar images (optional, for demonstration)
+        # Optionally search for similar images in Pinecone (for demonstration)
         similar_results = search_similar_embeddings(embedding)
         st.write("Similar Images Found in Pinecone:")
         for result in similar_results['matches']:
@@ -94,4 +96,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
