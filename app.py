@@ -24,12 +24,14 @@ pinecone_environment = st.secrets["pinecone"]["environment"]
 class DrowsinessDetection:
     def __init__(self):
         try:
+            st.write("Initializing Drowsiness Detection...")
             # Initialize Pinecone connection
             self.index_name = INDEX_NAME  # Index name from Streamlit secrets
             self.pc = PineconeClient.Client(api_key=PINECONE_API_KEY, environment=pinecone_environment)
 
             # Check if the index exists, create if it doesn't
             if self.index_name not in self.pc.list_indexes().names():
+                st.write(f"Creating Pinecone index: {self.index_name}")
                 self.pc.create_index(
                     name=self.index_name,
                     dimension=1024,  # The dimension of the embeddings (match this with model output)
@@ -45,7 +47,7 @@ class DrowsinessDetection:
         
         except Exception as e:
             st.error(f"Error initializing Pinecone: {e}")
-            raise
+            raise  # Raise the exception to prevent further execution if initialization fails
 
     def load_model(self):
         """Load pre-trained model and feature extractor."""
@@ -127,28 +129,34 @@ class DrowsinessDetection:
 # Main Streamlit interface
 def main():
     """Main function to handle Streamlit interface and prediction process."""
-    # Initialize DrowsinessDetection object
-    drowsiness_detector = DrowsinessDetection()
+    try:
+        # Initialize DrowsinessDetection object
+        st.write("Creating DrowsinessDetector instance...")
+        drowsiness_detector = DrowsinessDetection()
+        st.write("DrowsinessDetector instance created.")
 
-    # Load model and feature extractor
-    model, feature_extractor = drowsiness_detector.load_model()
+        # Load model and feature extractor
+        model, feature_extractor = drowsiness_detector.load_model()
 
-    # Capture image from webcam
-    camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
-    
-    if camera_input is not None:
-        # Load and preprocess image
-        img = Image.open(camera_input)
-        inputs = drowsiness_detector.preprocess_image(img, feature_extractor)
+        # Capture image from webcam
+        camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
+        
+        if camera_input is not None:
+            # Load and preprocess image
+            img = Image.open(camera_input)
+            inputs = drowsiness_detector.preprocess_image(img, feature_extractor)
 
-        # Get prediction
-        predicted_class_idx, prediction_score = drowsiness_detector.get_prediction(model, inputs)
+            # Get prediction
+            predicted_class_idx, prediction_score = drowsiness_detector.get_prediction(model, inputs)
 
-        # Store the result in Pinecone
-        drowsiness_detector.store_in_pinecone(img, predicted_class_idx, prediction_score)
+            # Store the result in Pinecone
+            drowsiness_detector.store_in_pinecone(img, predicted_class_idx, prediction_score)
 
-        # Display the image and prediction result
-        drowsiness_detector.display_result(img, predicted_class_idx, prediction_score)
+            # Display the image and prediction result
+            drowsiness_detector.display_result(img, predicted_class_idx, prediction_score)
+
+    except Exception as e:
+        st.error(f"An error occurred in the main function: {e}")
 
 if __name__ == "__main__":
     main()
