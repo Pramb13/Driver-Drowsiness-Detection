@@ -17,6 +17,7 @@ pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
 # Function to create the Pinecone index
 def create_pinecone_index():
     """Check if the index exists and create it if it doesn't."""
+    # Updated to use pinecone.indexes() instead of deprecated pinecone.list_indexes()
     if INDEX_NAME not in pinecone.indexes():  # Replace list_indexes() with indexes()
         print(f"Index '{INDEX_NAME}' not found. Creating index...")
         # Dimension must match the size of the image embeddings (e.g., 512 for many transformer models)
