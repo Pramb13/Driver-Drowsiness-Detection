@@ -3,15 +3,15 @@ import cv2
 import numpy as np
 from keras.models import load_model
 import os
+import tensorflow as tf
 
 # Display TensorFlow version for debugging
-import tensorflow as tf
 st.write(f"TensorFlow version: {tf.__version__}")
 
 # Path to the pre-trained model (ensure the model is included in your app directory)
 model_path = 'drowsiness_model.h5'  # or 'models/drowsiness_model.h5' if in a subfolder
 
-# Load the model from the predefined path when the app starts
+# Check if the model file exists and load it
 if os.path.exists(model_path):
     model = load_model(model_path)
     st.write("Model loaded successfully!")
