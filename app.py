@@ -6,7 +6,6 @@ import pinecone
 import numpy as np
 import os
 import time
-from sentence_transformers import SentenceTransformer
 
 # Set Hugging Face API key and Pinecone API key from Streamlit secrets
 os.environ['HUGGINGFACE_API_KEY'] = st.secrets["huggingface"]["api_key"]
@@ -87,6 +86,11 @@ def get_prediction(model, inputs):
         predicted_class_idx = torch.argmax(logits, dim=-1).item()
         prediction_score = logits.max().item()  # Highest score value
     return predicted_class_idx, prediction_score
+
+# Lazy import for sentence transformer model
+def load_sentence_transformer():
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer('all-MiniLM-L6-v2')
 
 # Display the image and prediction result
 def display_result(image, predicted_class_idx, prediction_score):
