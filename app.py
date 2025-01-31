@@ -19,19 +19,6 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
 pinecone_environment = st.secrets["pinecone"]["environment"]
 
-
-
-# Create the index if it doesn't exist
-if INDEX_NAME not in pinecone.list_indexes():
-    pinecone.create_index(
-        name=INDEX_NAME,
-        dimension=384,  # Ensure this matches the vector size
-        metric='cosine',  # Using cosine distance for vector similarity
-    )
-    st.write(f"Index '{INDEX_NAME}' created.")
-else:
-    st.write(f"Index '{INDEX_NAME}' already exists.")
-
 # Access the index
 index = pinecone.Index(INDEX_NAME)
 
