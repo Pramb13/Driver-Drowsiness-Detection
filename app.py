@@ -2,17 +2,6 @@ import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-import pymongo
-from bson import Binary
-import io
-
-# Access MongoDB URI from Streamlit secrets
-MONGO_URI = st.secrets["mongo"]["uri"]
-
-# MongoDB Connection
-client = pymongo.MongoClient(MONGO_URI)
-db = client.get_database()  # Get the default database
-collection = db.predictions  # Replace with your desired collection name
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
@@ -42,25 +31,6 @@ def get_prediction(model, inputs):
         prediction_score = logits.max().item()  # Highest score value
     return predicted_class_idx, prediction_score
 
-# Save the result to MongoDB
-def save_to_mongo(image, predicted_class_idx, prediction_score):
-    """Save the image and prediction results to MongoDB."""
-    # Convert image to binary for storage
-    byte_io = io.BytesIO()
-    image.save(byte_io, format="PNG")
-    image_binary = byte_io.getvalue()
-
-    # Document to insert
-    document = {
-        "image": Binary(image_binary),
-        "prediction_label": LABELS[predicted_class_idx],
-        "confidence": prediction_score,
-        "timestamp": st.timestamp()  # Add a timestamp for the record
-    }
-
-    # Insert into MongoDB
-    collection.insert_one(document)
-
 # Display the image and prediction result
 def display_result(image, predicted_class_idx, prediction_score):
     """Display the image along with the prediction result."""
@@ -85,11 +55,8 @@ def main():
         # Get prediction
         predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
-        # Save the result to MongoDB
-        save_to_mongo(img, predicted_class_idx, prediction_score)
-
         # Display the image and prediction result
         display_result(img, predicted_class_idx, prediction_score)
 
 if __name__ == "__main__":
-    main()
+    main()      
