@@ -11,7 +11,7 @@ from playsound import playsound  # Import playsound for alert sound
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
 HISTORY_FILE = "drowsiness_history.csv"  # File to track drowsiness history
-ALERT_SOUND_PATH = "alert_sound.mp3"  # Path to your alert sound file (replace with actual file)
+ALERT_SOUND_PATH = "audio_alert.wav"  # Path to your alert sound file (replace with actual file)
 
 # Initialize the model and feature extractor
 def load_model():
