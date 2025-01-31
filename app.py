@@ -5,7 +5,7 @@ from PIL import Image
 from datetime import datetime
 import os
 import pandas as pd
-from playsound import playsound  # Import playsound for alert sound
+import pygame  # Use pygame for audio playback
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
@@ -43,11 +43,17 @@ def get_current_time():
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return current_time
 
-# Play an alert sound when drowsiness is detected
+# Play an alert sound when drowsiness is detected using pygame
 def play_alert():
     """Play an alert sound when drowsiness is detected."""
     if os.path.exists(ALERT_SOUND_PATH):
-        playsound(ALERT_SOUND_PATH)
+        try:
+            pygame.mixer.init()  # Initialize pygame mixer for sound playback
+            pygame.mixer.music.load(ALERT_SOUND_PATH)  # Load the audio file
+            pygame.mixer.music.play()  # Play the sound
+            print("Alert sound is playing...")
+        except Exception as e:
+            print(f"Error while playing the sound: {e}")
     else:
         print("Alert sound file not found!")
 
