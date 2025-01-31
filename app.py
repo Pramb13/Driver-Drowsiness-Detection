@@ -1,11 +1,16 @@
+import os
 import streamlit as st
 import torch
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
+import pinecone
+import numpy as np
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")  # Securely fetch the API key from the environment
+INDEX_NAME = "drowsiness-detection"  # Name of the Pinecone index
 
 # Initialize the model and feature extractor
 def load_model():
@@ -13,6 +18,37 @@ def load_model():
     model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
+
+# Initialize Pinecone
+def initialize_pinecone():
+    """Initialize Pinecone connection."""
+    if not PINECONE_API_KEY:
+        st.error("Pinecone API key not set!")
+        return None
+    
+    pinecone.init(api_key=PINECONE_API_KEY, environment="us-west1-gcp")  # Change environment as needed
+    if INDEX_NAME not in pinecone.list_indexes():
+        pinecone.create_index(INDEX_NAME, dimension=768)
+    
+    return pinecone.Index(INDEX_NAME)
+
+# Store data in Pinecone
+def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
+    """Store image prediction data in Pinecone."""
+    # Convert image to a vector (using feature extractor or model)
+    vector = np.random.rand(768).tolist()  # Replace with actual image feature vector
+    
+    # Prepare the metadata for the image
+    metadata = {
+        "class": LABELS[predicted_class_idx],
+        "score": prediction_score,
+    }
+
+    # Generate a unique ID for the image
+    vector_id = str(np.random.randint(0, 1000000))
+
+    # Upsert the vector and metadata into Pinecone
+    index.upsert([(vector_id, vector, metadata)])
 
 # Preprocess image for the model
 def preprocess_image(image, feature_extractor):
@@ -44,6 +80,11 @@ def main():
     # Load model and feature extractor
     model, feature_extractor = load_model()
 
+    # Initialize Pinecone
+    index = initialize_pinecone()
+    if not index:
+        return  # Stop the app if Pinecone initialization fails
+
     # Capture image from webcam
     camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
     
@@ -55,8 +96,11 @@ def main():
         # Get prediction
         predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
+        # Store the result in Pinecone
+        store_in_pinecone(index, img, predicted_class_idx, prediction_score)
+
         # Display the image and prediction result
         display_result(img, predicted_class_idx, prediction_score)
 
 if __name__ == "__main__":
-    main()      
+    main()
