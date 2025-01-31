@@ -9,8 +9,8 @@ import os
 import time
 
 # Predefined user credentials for simplicity
-USER_CREDENTIALS = {"user": "user_password"}
-ADMIN_CREDENTIALS = {"admin": "admin_password"}
+USER_CREDENTIALS = {"user": "123"}
+ADMIN_CREDENTIALS = {"admin": "123"}
 
 # Placeholder for drowsiness data (this would be stored in a database in real life)
 drowsiness_data = []
