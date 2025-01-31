@@ -4,3 +4,4 @@ transformers
 Pillow
 numpy
 seaborn
+pdfkit
