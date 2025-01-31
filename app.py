@@ -4,6 +4,7 @@ import pandas as pd
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 from datetime import datetime
+import time
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"
@@ -90,22 +91,24 @@ def main():
             st.error("Failed to load the model. Please check your internet connection or try again later.")
             return
 
+        # Capture webcam input
         camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
+        
+        # Process image and make prediction if camera input is not None
         if camera_input is not None:
             img = Image.open(camera_input)
             inputs = preprocess_image(img, feature_extractor)
             predicted_class_idx, prediction_score = get_prediction(model, inputs)
 
-            # Adjust threshold to predict "Drowsy" if model is not confident about "Not Drowsy"
-            if prediction_score < 2.5:  # Set a confidence threshold for drowsiness prediction
+            # Adjust threshold for prediction
+            if prediction_score < 2.5:
                 predicted_class_idx = 1  # Force prediction to "Drowsy"
                 prediction_score = 0.85  # Set a default confidence score
 
             display_result(img, predicted_class_idx, prediction_score)
-
-            # Automatically reload camera input to keep prediction real-time
-            st.experimental_rerun()  # Refresh to get the latest image and update prediction
-
+        
+        else:
+            st.write("Waiting for webcam input...")
     else:
         st.title("Admin Dashboard")
         st.write("Below are the recorded predictions with date and time:")
