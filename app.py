@@ -25,7 +25,7 @@ def load_model():
     feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
     return model, feature_extractor
 
-# Initialize Pinecone (simplified)
+# Initialize Pinecone (using pinecone.Client())
 def initialize_pinecone():
     """Initialize Pinecone connection."""
     PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')  # Retrieve from environment
@@ -37,10 +37,11 @@ def initialize_pinecone():
     pinecone_environment = st.secrets["pinecone"]["environment"]  # Get environment from secrets
     
     # Initialize Pinecone with environment dynamically from secrets
-    pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
+    client = pinecone.Client(api_key=PINECONE_API_KEY, environment=pinecone_environment)
     
-    # Directly return the existing index (no check or creation of index)
-    return pinecone.Index(INDEX_NAME)
+    # Access the Pinecone index
+    index = client.index(INDEX_NAME)
+    return index
 
 # Store data in Pinecone
 def store_in_pinecone(index, image, predicted_class_idx, prediction_score):
@@ -105,7 +106,7 @@ def main():
     # Load model and feature extractor
     model, feature_extractor = load_model()
 
-    # Initialize Pinecone index (without index creation)
+    # Initialize Pinecone index (using the updated initialization method)
     index = initialize_pinecone()
     if not index:
         return  # Stop the app if Pinecone initialization fails
