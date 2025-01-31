@@ -12,20 +12,6 @@ PINECONE_ENVIRONMENT = st.secrets["pinecone"]["environment"]
 INDEX_NAME = st.secrets["pinecone"]["index_name"]
 
 
-# Function to create the Pinecone index
-def create_pinecone_index():
-    """Check if the index exists and create it if it doesn't."""
-    # Replace deprecated list_indexes() with indexes()
-    if INDEX_NAME not in pinecone.indexes():  # Corrected line
-        print(f"Index '{INDEX_NAME}' not found. Creating index...")
-        # Dimension must match the size of the image embeddings (e.g., 512 for many transformer models)
-        pinecone.create_index(INDEX_NAME, dimension=1024)  # Adjust dimension based on your model's output size
-    else:
-        print(f"Index '{INDEX_NAME}' already exists.")
-    
-    # Return the index connection
-    return pinecone.Index(INDEX_NAME)
-
 # Initialize the HuggingFace model
 MODEL_NAME = "facebook/dino-vits16"  # Example model for image classification
 LABELS = ["Not Drowsy", "Drowsy"]  # Example labels (adjust as per your model)
