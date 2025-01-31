@@ -2,6 +2,6 @@ streamlit
 torch
 transformers
 Pillow
-pinecone-client
+pinecone-client>=2.1.0
 sentence-transformers
 numpy
