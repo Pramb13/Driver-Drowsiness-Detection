@@ -76,7 +76,7 @@ def create_pinecone_index():
         # Create the index if not exists
         print(f"Index '{INDEX_NAME}' not found. Creating index...")
         # Adjust dimension based on your model's output size (e.g., 512 for many transformer models)
-        pinecone.create_index(INDEX_NAME, dimension=512)
+        pinecone.create_index(INDEX_NAME, dimension=1024)
         index = pinecone.Index(INDEX_NAME)
 
     return index
