@@ -36,9 +36,10 @@ def initialize_pinecone():
     pinecone_environment = st.secrets["pinecone"]["environment"]  # Get environment from secrets
 
     # Initialize Pinecone client
-    pinecone.init(api_key=PINECONE_API_KEY, environment=pinecone_environment)
+    client = pinecone.Client(api_key=PINECONE_API_KEY, environment=pinecone_environment)
+
     # Access the Pinecone index
-    index = pinecone.Index(INDEX_NAME)
+    index = client.index(INDEX_NAME)
     return index
 
 # Store data in Pinecone
