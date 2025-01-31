@@ -19,23 +19,25 @@ PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 INDEX_NAME = st.secrets["pinecone"]["index_name"]  # Secure access to the Pinecone index name
 pinecone_environment = st.secrets["pinecone"]["environment"]
 
-def __init__(self, pdf_file):
-        self.index_name = "textembedding"
-        self.pc = PineconeClient(api_key=os.getenv('PINECONE_API_KEY'))
+# Initialize Pinecone client
+pc = PineconeClient(api_key=PINECONE_API_KEY)
+pc.init(environment=pinecone_environment)
 
-        if self.index_name not in self.pc.list_indexes().names():
-            self.pc.create_index(
-                name=self.index_name,
-                dimension=384,
-                metric='cosine',
-            )
-            st.write(f"Index '{self.index_name}' created.")
-        else:
-            st.write(f"Index '{self.index_name}' already exists.")
+# Create the index if it doesn't exist
+if INDEX_NAME not in pc.list_indexes().names():
+    pc.create_index(
+        name=INDEX_NAME,
+        dimension=384,  # Ensure this matches the vector size
+        metric='cosine',  # Using cosine distance for vector similarity
+    )
+    st.write(f"Index '{INDEX_NAME}' created.")
+else:
+    st.write(f"Index '{INDEX_NAME}' already exists.")
 
-        self.index = self.pc.Index(self.index_name)
-        index = pinecone.Index(INDEX_NAME)
+# Access the index
+index = pc.Index(INDEX_NAME)
 
+# Initialize the model and feature extractor
 def load_model():
     """Load pre-trained model and feature extractor."""
     model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
