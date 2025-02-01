@@ -4,7 +4,6 @@ import pandas as pd
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 from datetime import datetime
-import time
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"
@@ -12,6 +11,7 @@ LABELS = ["Not Drowsy", "Drowsy"]
 USER_CREDENTIALS = {"user": "123"}
 ADMIN_CREDENTIALS = {"admin": "admin123"}
 
+# Store session predictions
 if "predictions" not in st.session_state:
     st.session_state["predictions"] = []
 
@@ -24,6 +24,7 @@ def authenticate(username, password, role):
 
 @st.cache_resource
 def load_model():
+    """ Load the image classification model and feature extractor """
     try:
         model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
         feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
@@ -33,41 +34,53 @@ def load_model():
         return None, None
 
 def preprocess_image(image, feature_extractor):
+    """ Convert and preprocess image for model input """
     image = image.convert("RGB")
     return feature_extractor(images=image, return_tensors="pt")
 
 def get_prediction(model, inputs):
+    """ Get model prediction and confidence score """
     try:
         with torch.no_grad():
             outputs = model(**inputs)
             logits = outputs.logits
-            predicted_class_idx = torch.argmax(logits, dim=-1).item()
-            prediction_score = logits.max().item()
+            probabilities = torch.nn.functional.softmax(logits, dim=-1)  # Normalize scores
+            predicted_class_idx = torch.argmax(probabilities, dim=-1).item()
+            prediction_score = probabilities[0, predicted_class_idx].item()
+
+        # Debugging: Print the raw outputs
+        print(f"Logits: {logits}")
+        print(f"Predicted Class Index: {predicted_class_idx}")
+        print(f"Confidence Score: {prediction_score:.2f}")
+
         return predicted_class_idx, prediction_score
     except Exception as e:
         st.error(f"Prediction error: {e}")
         return None, None
 
 def display_result(image, predicted_class_idx, prediction_score):
-    st.image(image, caption="Captured Image from Webcam", use_container_width=True)
+    """ Display prediction result with confidence score """
+    st.image(image, caption="Captured Image", use_container_width=True)
     if predicted_class_idx is not None:
         prediction_label = LABELS[predicted_class_idx]
-        st.write(f"Prediction: {prediction_label} with confidence {prediction_score:.2f}")
-        # Add current timestamp to the prediction entry
+        st.write(f"**Prediction:** {prediction_label}  \n"
+                 f"**Confidence Score:** {prediction_score:.2f}")
+
+        # Save prediction with timestamp
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st.session_state["predictions"].append({
             "Prediction": prediction_label, 
-            "Confidence Score": prediction_score,
+            "Confidence Score": f"{prediction_score:.2f}",
             "Timestamp": timestamp
         })
-    else:
-        st.write("Error: Could not make a prediction.")
 
 def sidebar():
+    """ Sidebar authentication for users and admins """
     st.sidebar.title("Drowsiness Detection System")
     role = st.sidebar.radio("Select Role", ("User", "Admin"))
     username = st.sidebar.text_input("Username")
     password = st.sidebar.text_input("Password", type="password")
+
     if st.sidebar.button("Login"):
         if authenticate(username, password, role):
             st.session_state["authenticated"] = True
@@ -77,6 +90,7 @@ def sidebar():
             st.sidebar.error("Invalid credentials. Please try again.")
 
 def main():
+    """ Main app logic """
     st.title("Real-Time Drowsiness Detection")
     st.markdown("This application detects drowsiness using a deep learning model.")
     sidebar()
@@ -85,6 +99,7 @@ def main():
         return
     
     role = st.session_state.get("role", "User")
+    
     if role == "User":
         model, feature_extractor = load_model()
         if model is None or feature_extractor is None:
@@ -94,24 +109,18 @@ def main():
         # Capture webcam input
         camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
         
-        # Process image and make prediction if camera input is not None
         if camera_input is not None:
             img = Image.open(camera_input)
             inputs = preprocess_image(img, feature_extractor)
             predicted_class_idx, prediction_score = get_prediction(model, inputs)
-
-            # Adjust threshold for prediction
-            if prediction_score < 2.5:
-                predicted_class_idx = 1  # Force prediction to "Drowsy"
-                prediction_score = 0.85  # Set a default confidence score
-
             display_result(img, predicted_class_idx, prediction_score)
-        
         else:
             st.write("Waiting for webcam input...")
-    else:
+
+    else:  # Admin Panel
         st.title("Admin Dashboard")
         st.write("Below are the recorded predictions with date and time:")
+        
         if st.session_state["predictions"]:
             df = pd.DataFrame(st.session_state["predictions"])
             st.dataframe(df)
