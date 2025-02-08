@@ -81,8 +81,9 @@ def sidebar():
     st.sidebar.title("Drowsiness Detection System")
     role = st.sidebar.radio("Select Role", ("User", "Admin"))
     username = st.sidebar.text_input("Username")
-    # Display password input as text for easier debugging
-    password = st.sidebar.text_input("Password", type="text")  # Change to "text" for easier debugging
+    
+    # Use default input type for password
+    password = st.sidebar.text_input("Password", type="default")  # Changed to type="default"
 
     if st.sidebar.button("Login"):
         if authenticate(username, password, role):
