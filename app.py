@@ -16,8 +16,6 @@ if "predictions" not in st.session_state:
     st.session_state["predictions"] = []
 
 def authenticate(username, password, role):
-    """ Authenticate user or admin based on credentials """
-    print(f"Trying to authenticate as {role} with username: {username}, password: {password}")  # Debug print
     if role == "User" and username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
         return True
     elif role == "Admin" and username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[username] == password:
@@ -81,9 +79,7 @@ def sidebar():
     st.sidebar.title("Drowsiness Detection System")
     role = st.sidebar.radio("Select Role", ("User", "Admin"))
     username = st.sidebar.text_input("Username")
-    
-    # Use default input type for password
-    password = st.sidebar.text_input("Password", type="default")  # Changed to type="default"
+    password = st.sidebar.text_input("Password", type="password")
 
     if st.sidebar.button("Login"):
         if authenticate(username, password, role):
@@ -98,12 +94,12 @@ def main():
     st.title("Real-Time Drowsiness Detection")
     st.markdown("This application detects drowsiness using a deep learning model.")
     sidebar()
-
+    
     if "authenticated" not in st.session_state:
         return
-
+    
     role = st.session_state.get("role", "User")
-
+    
     if role == "User":
         model, feature_extractor = load_model()
         if model is None or feature_extractor is None:
@@ -112,7 +108,7 @@ def main():
 
         # Capture webcam input
         camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
-
+        
         if camera_input is not None:
             img = Image.open(camera_input)
             inputs = preprocess_image(img, feature_extractor)
@@ -124,7 +120,7 @@ def main():
     else:  # Admin Panel
         st.title("Admin Dashboard")
         st.write("Below are the recorded predictions with date and time:")
-
+        
         if st.session_state["predictions"]:
             df = pd.DataFrame(st.session_state["predictions"])
             st.dataframe(df)
