@@ -1,0 +1,5 @@
+uploaded_file = st.file_uploader("Upload best.pt", type="pt")
+if uploaded_file:
+    with open("best.pt", "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    st.success("✅ Model uploaded successfully!")
