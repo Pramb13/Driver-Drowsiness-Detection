@@ -1,8 +1,6 @@
 streamlit
-torch
-torchvision
-transformers
+opencv-python
 numpy
+torch
 pillow
-streamlit-webrtc
-av
+yolov5
