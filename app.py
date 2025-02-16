@@ -1,58 +1,82 @@
-import streamlit as st
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
-import av
+import torch
 import cv2
 import numpy as np
-import torch
-import torchvision.transforms as transforms
+import streamlit as st
+import tempfile
+import urllib.request
+import os
 
-# Load your YOLOv5 model (make sure it's trained and exported correctly)
-@st.cache_resource
-def load_model():
-    model = torch.hub.load('ultralytics/yolov5', 'custom', path='best.pt')  # Change path to your model
-    model.eval()
-    return model
+# Streamlit Page Config
+st.set_page_config(page_title="Real-Time Drowsiness Detection", layout="wide")
 
-model = load_model()
-
-# Define a Video Processor to handle video frames
-class VideoProcessor(VideoProcessorBase):
-    def __init__(self):
-        self.model = model
-        self.transform = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Resize((640, 640)),
-            transforms.ToTensor()
-        ])
-
-    def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")  # Convert frame to NumPy array
-        img_resized = cv2.resize(img, (640, 640))  # Resize for YOLOv5
-
-        # Convert frame to PyTorch tensor
-        img_tensor = self.transform(img_resized).unsqueeze(0)
-
-        # Perform inference
-        results = self.model(img_tensor)
-        detections = results.pandas().xyxy[0]  # Extract bounding boxes
-
-        # Draw detections
-        for _, row in detections.iterrows():
-            if row['confidence'] > 0.5:  # Adjust threshold as needed
-                x1, y1, x2, y2 = int(row['xmin']), int(row['ymin']), int(row['xmax']), int(row['ymax'])
-                label = f"{row['name']} {row['confidence']:.2f}"
-                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-# Streamlit UI
-st.title("🚗 Real-Time Drowsiness Detection")
+# Title
+st.title("😴 Real-Time Drowsiness Detection")
 st.write("This application detects drowsiness using a deep learning model.")
 
-# Start WebRTC Stream
-webrtc_streamer(
-    key="drowsiness-detection",
-    video_processor_factory=VideoProcessor,
-    rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
-)
+# Function to download the model if missing
+@st.cache_resource
+def load_model():
+    try:
+        model_path = "best.pt"
+
+        # Download model if not available
+        model_url = "https://your-cloud-storage.com/best.pt"  # Replace with your actual model URL
+        if not os.path.exists(model_path):
+            st.info("Downloading model file, please wait...")
+            urllib.request.urlretrieve(model_url, model_path)
+            st.success("Model downloaded successfully!")
+
+        # Load YOLOv5 model
+        model = torch.hub.load("ultralytics/yolov5", "custom", path=model_path, source="local")
+        model.eval()
+        return model
+    except Exception as e:
+        st.error(f"Error loading model: {e}")
+        return None
+
+# Load the model
+model = load_model()
+if model is None:
+    st.stop()  # Stop execution if model fails to load
+
+# Function to process frames
+def detect_drowsiness(frame):
+    try:
+        img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = model(img)
+
+        for det in results.xyxy[0]:
+            x1, y1, x2, y2, conf, cls = map(int, det)
+            label = model.names[cls]
+            color = (0, 255, 0) if label == "Awake" else (0, 0, 255)
+
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+            cv2.putText(img, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+
+        return img
+    except Exception as e:
+        st.error(f"Error processing frame: {e}")
+        return frame
+
+# Webcam Input
+st.subheader("Webcam Feed for Real-Time Drowsiness Detection")
+video_placeholder = st.empty()
+start = st.button("START", key="start")
+
+if start:
+    cap = cv2.VideoCapture(0)
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            st.error("Error accessing webcam")
+            break
+        
+        frame = detect_drowsiness(frame)
+
+        # Convert frame to bytes for Streamlit
+        _, img_encoded = cv2.imencode(".jpg", frame)
+        img_bytes = img_encoded.tobytes()
+        video_placeholder.image(img_bytes, channels="RGB", use_column_width=True)
+
+    cap.release()
