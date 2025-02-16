@@ -1,54 +1,72 @@
 import streamlit as st
+import torch
+import requests
 import cv2
 import numpy as np
-import torch
 import tempfile
 import os
-from PIL import Image
-from yolov5 import YOLOv5
 
-# Load YOLOv5 Model (Make sure you have the model file in the same directory or provide the path)
-MODEL_PATH = "best.pt"  # Change this to your actual model path
+# ------------------------------#
+# **CONFIGURATION & MODEL LOADING**
+# ------------------------------#
+
+st.title("🚘 Live Drowsiness Detection System")
+st.write("This app uses a deep learning model to detect drowsiness in real-time.")
+
+MODEL_PATH = "best.pt"
+MODEL_URL = "https://drive.google.com/uc?id=YOUR_DRIVE_FILE_ID"  # Replace with your actual file ID
+
+# Download model if not present
+if not os.path.exists(MODEL_PATH):
+    with st.spinner("Downloading YOLOv5 model..."):
+        response = requests.get(MODEL_URL, stream=True)
+        with open(MODEL_PATH, "wb") as f:
+            for chunk in response.iter_content(chunk_size=1024):
+                if chunk:
+                    f.write(chunk)
+        st.success("Model downloaded successfully!")
+
+# Load YOLOv5 model
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model = YOLOv5(MODEL_PATH, device)
+model = torch.hub.load("ultralytics/yolov5", "custom", path=MODEL_PATH, force_reload=True)
 
-st.title("🚗 Live Drowsiness Detection System")
-st.write("This app uses a deep learning model to detect drowsiness in real time.")
+# ------------------------------#
+# **LIVE WEBCAM STREAM & PREDICTION**
+# ------------------------------#
 
-# Webcam Capture Section
-st.subheader("📷 Live Camera Feed")
-video_file = st.camera_input("Capture a frame for prediction")
+st.subheader("📷 Live Prediction")
 
-if video_file is not None:
-    # Save temporary file
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
-        temp_file.write(video_file.getvalue())
-        temp_path = temp_file.name
+# OpenCV video capture
+cap = cv2.VideoCapture(0)
 
-    # Read Image
-    image = Image.open(temp_path)
-    image = np.array(image)
+if not cap.isOpened():
+    st.error("Failed to open webcam. Please allow camera permissions.")
 
-    # Convert to BGR for OpenCV Processing
-    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+FRAME_WINDOW = st.image([])
 
-    # Run YOLOv5 Model for Prediction
-    results = model.predict(image)
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        st.warning("No frame captured. Check webcam connection.")
+        break
 
-    # Draw Bounding Boxes
-    for result in results.xyxy[0]:  # Extract first frame's results
-        x1, y1, x2, y2, conf, cls = result
-        label = f"Drowsy ({conf:.2f})" if int(cls) == 1 else "Alert"
-        color = (0, 0, 255) if int(cls) == 1 else (0, 255, 0)
+    # Convert frame from BGR to RGB
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-        cv2.putText(image, label, (int(x1), int(y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+    # Perform YOLOv5 detection
+    results = model(frame_rgb)
 
-    # Convert back to RGB
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    # Render predictions
+    for *box, conf, cls in results.xyxy[0]:
+        x1, y1, x2, y2 = map(int, box)
+        label = f"{model.names[int(cls)]}: {conf:.2f}"
+        color = (0, 255, 0) if int(cls) == 0 else (0, 0, 255)  # Green for awake, Red for drowsy
+        cv2.rectangle(frame_rgb, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(frame_rgb, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-    # Display Processed Image with Predictions
-    st.image(image, caption="Live Prediction", use_column_width=True)
+    # Display frame
+    FRAME_WINDOW.image(frame_rgb)
 
-    # Remove Temp File
-    os.remove(temp_path)
+# Release resources
+cap.release()
+cv2.destroyAllWindows()
