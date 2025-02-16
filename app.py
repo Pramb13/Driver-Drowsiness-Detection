@@ -3,129 +3,123 @@ import torch
 import pandas as pd
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
-from datetime import datetime
+import time
+import datetime
 import os
+import base64
 
-# Fix PyTorch and Streamlit File Watcher Issue
+# Disable Streamlit Watchdog Warning
 os.environ["STREAMLIT_WATCHDOG"] = "0"
 
-# Constants
-MODEL_NAME = "facebook/dino-vits16"
-LABELS = ["Not Drowsy", "Drowsy"]
-USER_CREDENTIALS = {"user": "123"}
-ADMIN_CREDENTIALS = {"admin": "admin123"}
-
-# Store session predictions
-if "predictions" not in st.session_state:
-    st.session_state["predictions"] = []
-
-def authenticate(username, password, role):
-    """ Simple authentication for users and admins """
-    if role == "User" and username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
-        return True
-    elif role == "Admin" and username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[username] == password:
-        return True
-    return False
-
+# Load Model
 @st.cache_resource
 def load_model():
-    """ Load the image classification model and feature extractor """
-    try:
-        model = AutoModelForImageClassification.from_pretrained(MODEL_NAME)
-        feature_extractor = AutoFeatureExtractor.from_pretrained(MODEL_NAME)
-        return model, feature_extractor
-    except Exception as e:
-        st.error(f"Error loading model: {e}")
-        return None, None
+    model = AutoModelForImageClassification.from_pretrained("facebook/dino-vits16")
+    feature_extractor = AutoFeatureExtractor.from_pretrained("facebook/dino-vits16")
+    return model, feature_extractor
 
 def preprocess_image(image, feature_extractor):
-    """ Convert and preprocess image for model input """
     image = image.convert("RGB")
     return feature_extractor(images=image, return_tensors="pt")
 
 def get_prediction(model, inputs):
-    """ Get model prediction and confidence score """
-    try:
-        with torch.no_grad():
-            outputs = model(**inputs)
-            logits = outputs.logits
-            probabilities = torch.nn.functional.softmax(logits, dim=-1)  # Normalize scores
-            predicted_class_idx = torch.argmax(probabilities, dim=-1).item()
-            prediction_score = probabilities[0, predicted_class_idx].item()
+    with torch.no_grad():
+        outputs = model(**inputs)
+        logits = outputs.logits
+        probabilities = torch.nn.functional.softmax(logits, dim=-1)
+        predicted_class_idx = torch.argmax(probabilities, dim=-1).item()
+        prediction_score = probabilities[0, predicted_class_idx].item()
+    return predicted_class_idx, prediction_score
 
-        return predicted_class_idx, prediction_score
-    except Exception as e:
-        st.error(f"Prediction error: {e}")
-        return None, None
+# Webcam with Live Stream (HTML5 + JS)
+def webcam_stream():
+    st.markdown(
+        """
+        <style>
+        .video-container {
+            display: flex;
+            justify-content: center;
+        }
+        </style>
+        <div class="video-container">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" style="display: none;"></canvas>
+        </div>
+        <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
 
-def display_result(image, predicted_class_idx, prediction_score):
-    """ Display prediction result with confidence score """
-    st.image(image, caption="Captured Image", use_container_width=True)
-    if predicted_class_idx is not None:
-        prediction_label = LABELS[predicted_class_idx]
-        st.write(f"**Prediction:** {prediction_label}  \n"
-                 f"**Confidence Score:** {prediction_score:.2f}")
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.play();
+            } catch (err) {
+                console.error("Error accessing the camera: ", err);
+            }
+        }
 
-        # Save prediction with timestamp
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        st.session_state["predictions"].append({
-            "Prediction": prediction_label, 
-            "Confidence Score": f"{prediction_score:.2f}",
-            "Timestamp": timestamp
-        })
+        function captureFrame() {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/png');
+        }
 
-def sidebar():
-    """ Sidebar authentication for users and admins """
-    st.sidebar.title("Drowsiness Detection System")
-    role = st.sidebar.radio("Select Role", ("User", "Admin"))
-    username = st.sidebar.text_input("Username")
-    password = st.sidebar.text_input("Password", type="password")
+        function sendFrame() {
+            const imageData = captureFrame();
+            fetch('/upload_image', {
+                method: 'POST',
+                body: JSON.stringify({ image: imageData }),
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
 
-    if st.sidebar.button("Login"):
-        if authenticate(username, password, role):
-            st.session_state["authenticated"] = True
-            st.session_state["role"] = role
-            st.sidebar.success(f"Logged in as {role}")
-        else:
-            st.sidebar.error("Invalid credentials. Please try again.")
+        setInterval(sendFrame, 3000); // Capture image every 3 seconds
+        startCamera();
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
 
+# Admin Panel to View History
+def admin_panel():
+    st.title("Admin Dashboard")
+    st.write("Below are the recorded predictions with timestamps:")
+    if "predictions" in st.session_state:
+        df = pd.DataFrame(st.session_state["predictions"])
+        st.dataframe(df)
+    else:
+        st.write("No data available.")
+
+# Main App
 def main():
-    """ Main app logic """
-    st.title("Real-Time Drowsiness Detection")
-    st.markdown("This application detects drowsiness using a deep learning model.")
-    sidebar()
-    
-    if "authenticated" not in st.session_state:
-        return
-    
-    role = st.session_state.get("role", "User")
-    
-    if role == "User":
-        model, feature_extractor = load_model()
-        if model is None or feature_extractor is None:
-            st.error("Failed to load the model. Please check your internet connection or try again later.")
-            return
+    st.title("Live Drowsiness Detection")
+    webcam_stream()  # Show live camera feed
 
-        # Capture webcam input
-        camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
-        
-        if camera_input is not None:
-            img = Image.open(camera_input)
-            inputs = preprocess_image(img, feature_extractor)
-            predicted_class_idx, prediction_score = get_prediction(model, inputs)
-            display_result(img, predicted_class_idx, prediction_score)
-        else:
-            st.write("Waiting for webcam input...")
+    model, feature_extractor = load_model()
 
-    else:  # Admin Panel
-        st.title("Admin Dashboard")
-        st.write("Below are the recorded predictions with date and time:")
-        
-        if st.session_state["predictions"]:
-            df = pd.DataFrame(st.session_state["predictions"])
-            st.dataframe(df)
-        else:
-            st.write("No data available.")
+    # Handle Image Upload from JS
+    if st.experimental_get_query_params().get("image"):
+        img_data = st.experimental_get_query_params()["image"]
+        img_data = base64.b64decode(img_data.split(",")[1])
+        image = Image.open(io.BytesIO(img_data))
+        inputs = preprocess_image(image, feature_extractor)
+        predicted_class_idx, prediction_score = get_prediction(model, inputs)
+
+        label = ["Not Drowsy", "Drowsy"][predicted_class_idx]
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        st.image(image, caption=f"Prediction: {label} (Score: {prediction_score:.2f})")
+
+        if "predictions" not in st.session_state:
+            st.session_state["predictions"] = []
+        st.session_state["predictions"].append({
+            "Timestamp": timestamp,
+            "Prediction": label,
+            "Score": f"{prediction_score:.2f}"
+        })
 
 if __name__ == "__main__":
     main()
