@@ -5,7 +5,7 @@ import av
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 from datetime import datetime
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"
@@ -13,9 +13,13 @@ LABELS = ["Not Drowsy", "Drowsy"]
 USER_CREDENTIALS = {"user": "123"}
 ADMIN_CREDENTIALS = {"admin": "admin123"}
 
-# Store session predictions
-if "predictions" not in st.session_state:
-    st.session_state["predictions"] = []
+# Configure WebRTC with STUN/TURN servers
+RTC_CONFIG = RTCConfiguration({
+    "iceServers": [
+        {"urls": "stun:stun.l.google.com:19302"},  # Free STUN server
+        {"urls": "turn:turn.bistri.com:80", "username": "homeo", "credential": "homeo"}  # Free TURN server
+    ]
+})
 
 @st.cache_resource
 def load_model():
@@ -42,7 +46,6 @@ def get_prediction(model, inputs):
             probabilities = torch.nn.functional.softmax(logits, dim=-1)
             predicted_class_idx = torch.argmax(probabilities, dim=-1).item()
             prediction_score = probabilities[0, predicted_class_idx].item()
-
         return predicted_class_idx, prediction_score
     except Exception as e:
         st.error(f"Prediction error: {e}")
@@ -71,7 +74,7 @@ class VideoProcessor(VideoProcessorBase):
                     "Timestamp": timestamp
                 })
 
-                return av.VideoFrame.from_image(img)
+            return av.VideoFrame.from_image(img)
 
         except Exception as e:
             st.error(f"Error processing frame: {e}")
@@ -117,8 +120,8 @@ def main():
             st.error("Failed to load the model. Please check your internet connection or try again later.")
             return
 
-        # Live video streaming
-        webrtc_streamer(key="drowsiness-detection", video_processor_factory=VideoProcessor)
+        # Live video streaming with WebRTC and TURN servers
+        webrtc_streamer(key="drowsiness-detection", video_processor_factory=VideoProcessor, rtc_configuration=RTC_CONFIG)
 
     else:  # Admin Panel
         st.title("Admin Dashboard")
