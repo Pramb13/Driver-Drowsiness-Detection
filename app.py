@@ -1,11 +1,13 @@
 import streamlit as st
 import torch
 import pandas as pd
-import av
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
 from PIL import Image
 from datetime import datetime
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
+import os
+
+# Fix PyTorch and Streamlit File Watcher Issue
+os.environ["STREAMLIT_WATCHDOG"] = "0"
 
 # Constants
 MODEL_NAME = "facebook/dino-vits16"
@@ -13,13 +15,17 @@ LABELS = ["Not Drowsy", "Drowsy"]
 USER_CREDENTIALS = {"user": "123"}
 ADMIN_CREDENTIALS = {"admin": "admin123"}
 
-# Configure WebRTC with STUN/TURN servers
-RTC_CONFIG = RTCConfiguration({
-    "iceServers": [
-        {"urls": "stun:stun.l.google.com:19302"},  # Free STUN server
-        {"urls": "turn:turn.bistri.com:80", "username": "homeo", "credential": "homeo"}  # Free TURN server
-    ]
-})
+# Store session predictions
+if "predictions" not in st.session_state:
+    st.session_state["predictions"] = []
+
+def authenticate(username, password, role):
+    """ Simple authentication for users and admins """
+    if role == "User" and username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
+        return True
+    elif role == "Admin" and username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[username] == password:
+        return True
+    return False
 
 @st.cache_resource
 def load_model():
@@ -43,42 +49,30 @@ def get_prediction(model, inputs):
         with torch.no_grad():
             outputs = model(**inputs)
             logits = outputs.logits
-            probabilities = torch.nn.functional.softmax(logits, dim=-1)
+            probabilities = torch.nn.functional.softmax(logits, dim=-1)  # Normalize scores
             predicted_class_idx = torch.argmax(probabilities, dim=-1).item()
             prediction_score = probabilities[0, predicted_class_idx].item()
+
         return predicted_class_idx, prediction_score
     except Exception as e:
         st.error(f"Prediction error: {e}")
         return None, None
 
-class VideoProcessor(VideoProcessorBase):
-    """ Video processing class for real-time drowsiness detection """
-    def __init__(self):
-        self.model, self.feature_extractor = load_model()
+def display_result(image, predicted_class_idx, prediction_score):
+    """ Display prediction result with confidence score """
+    st.image(image, caption="Captured Image", use_container_width=True)
+    if predicted_class_idx is not None:
+        prediction_label = LABELS[predicted_class_idx]
+        st.write(f"**Prediction:** {prediction_label}  \n"
+                 f"**Confidence Score:** {prediction_score:.2f}")
 
-    def recv(self, frame):
-        """ Process each frame and make predictions """
-        try:
-            img = frame.to_image()
-            inputs = preprocess_image(img, self.feature_extractor)
-            predicted_class_idx, prediction_score = get_prediction(self.model, inputs)
-
-            if predicted_class_idx is not None:
-                prediction_label = LABELS[predicted_class_idx]
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                # Store predictions
-                st.session_state["predictions"].append({
-                    "Prediction": prediction_label,
-                    "Confidence Score": f"{prediction_score:.2f}",
-                    "Timestamp": timestamp
-                })
-
-            return av.VideoFrame.from_image(img)
-
-        except Exception as e:
-            st.error(f"Error processing frame: {e}")
-            return frame  # Return the original frame if an error occurs
+        # Save prediction with timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state["predictions"].append({
+            "Prediction": prediction_label, 
+            "Confidence Score": f"{prediction_score:.2f}",
+            "Timestamp": timestamp
+        })
 
 def sidebar():
     """ Sidebar authentication for users and admins """
@@ -95,14 +89,6 @@ def sidebar():
         else:
             st.sidebar.error("Invalid credentials. Please try again.")
 
-def authenticate(username, password, role):
-    """ Authentication function for users and admins """
-    if role == "User" and username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
-        return True
-    elif role == "Admin" and username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[username] == password:
-        return True
-    return False
-
 def main():
     """ Main app logic """
     st.title("Real-Time Drowsiness Detection")
@@ -113,15 +99,23 @@ def main():
         return
     
     role = st.session_state.get("role", "User")
-
+    
     if role == "User":
         model, feature_extractor = load_model()
         if model is None or feature_extractor is None:
             st.error("Failed to load the model. Please check your internet connection or try again later.")
             return
 
-        # Live video streaming with WebRTC and TURN servers
-        webrtc_streamer(key="drowsiness-detection", video_processor_factory=VideoProcessor, rtc_configuration=RTC_CONFIG)
+        # Capture webcam input
+        camera_input = st.camera_input("Webcam feed for real-time drowsiness detection")
+        
+        if camera_input is not None:
+            img = Image.open(camera_input)
+            inputs = preprocess_image(img, feature_extractor)
+            predicted_class_idx, prediction_score = get_prediction(model, inputs)
+            display_result(img, predicted_class_idx, prediction_score)
+        else:
+            st.write("Waiting for webcam input...")
 
     else:  # Admin Panel
         st.title("Admin Dashboard")
