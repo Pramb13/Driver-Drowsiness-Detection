@@ -5,3 +5,4 @@ Pillow
 numpy
 seaborn
 pdfkit
+python-opencv
