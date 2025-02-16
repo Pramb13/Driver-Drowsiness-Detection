@@ -1,56 +1,64 @@
 import streamlit as st
 import torch
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 from transformers import AutoModelForImageClassification, AutoFeatureExtractor
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
-import av
 
-# Load Model
+# --- Page Config ---
+st.set_page_config(page_title="Live Drowsiness Detection", layout="wide")
+
+# --- JavaScript for Live Webcam ---
+live_webcam_code = """
+    <video id="video" autoplay playsinline style="width: 100%; border-radius: 10px;"></video>
+    <script>
+        async function setupCamera() {
+            const video = document.getElementById('video');
+            if (navigator.mediaDevices.getUserMedia) {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+            }
+        }
+        setupCamera();
+    </script>
+"""
+
+# --- Load Model ---
 @st.cache_resource
 def load_model():
-    """Load pre-trained model from Hugging Face."""
     model = AutoModelForImageClassification.from_pretrained("facebook/dino-vits16")
     feature_extractor = AutoFeatureExtractor.from_pretrained("facebook/dino-vits16")
     return model, feature_extractor
 
-# Initialize Model
 model, feature_extractor = load_model()
 
-# Prediction Function
-def predict(model, image):
-    """Run inference and return predicted label & confidence score."""
+# --- Streamlit UI ---
+st.title("🚗 Live Drowsiness Detection System")
+st.markdown("This app uses a deep learning model to detect drowsiness in real-time.")
+
+# --- Embed Webcam Video ---
+st.components.v1.html(live_webcam_code, height=300)
+
+# --- Live Prediction Logic ---
+uploaded_image = st.file_uploader("📷 Capture Frame for Prediction", type=["jpg", "jpeg", "png"])
+
+if uploaded_image:
+    image = Image.open(uploaded_image)
+    
+    # Preprocess Image
     inputs = feature_extractor(images=image, return_tensors="pt")
+    
+    # Predict
     with torch.no_grad():
         outputs = model(**inputs)
         logits = outputs.logits
         probabilities = torch.nn.functional.softmax(logits, dim=-1)
         predicted_class_idx = torch.argmax(probabilities, dim=-1).item()
         confidence = probabilities[0, predicted_class_idx].item()
-    return predicted_class_idx, confidence
 
-# Custom Video Processing Class
-class VideoProcessor(VideoProcessorBase):
-    def recv(self, frame):
-        img = Image.fromarray(frame.to_ndarray(format="rgb24"))  # Convert frame to PIL Image
+    # Show Prediction
+    label = "Not Drowsy" if predicted_class_idx == 0 else "Drowsy"
+    color = "green" if predicted_class_idx == 0 else "red"
 
-        # Predict Drowsiness
-        predicted_class_idx, confidence = predict(model, img)
-
-        # Annotate Frame with Prediction
-        label = "Not Drowsy" if predicted_class_idx == 0 else "Drowsy"
-        color = (0, 255, 0) if predicted_class_idx == 0 else (255, 0, 0)
-
-        # Draw Text on Image
-        draw = ImageDraw.Draw(img)
-        text = f"{label} ({confidence:.2f})"
-        draw.text((10, 10), text, fill=color)
-
-        return av.VideoFrame.from_ndarray(np.array(img), format="rgb24")
-
-# Streamlit App UI
-st.title("🚗 Live Drowsiness Detection System")
-st.markdown("This app uses a deep learning model to detect drowsiness in real time.")
-
-# Start Webcam Stream
-webrtc_streamer(key="drowsiness", video_processor_factory=VideoProcessor)
+    # Display Result
+    st.image(image, caption="Captured Frame", use_column_width=True)
+    st.markdown(f"### Prediction: <span style='color:{color};'>{label}</span> ({confidence:.2f})", unsafe_allow_html=True)
