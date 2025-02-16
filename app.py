@@ -72,16 +72,29 @@ def predict_drowsiness(image):
 
 # --- Receive Live Data ---
 st.markdown("### **Live Prediction**")
+
 while True:
-    msg = st.query_params.get("img", [""])[0]  # ✅ Replaced old method with st.query_params
-    if msg:
+    # 🔍 Debug: Check if image data is received
+    msg = st.query_params.get("img", [""])[0]  # ✅ Updated query method
+    if not msg:
+        st.warning("No image received. Please check the webcam feed.")
+        continue
+    
+    try:
         # Decode base64 image
         img_bytes = base64.b64decode(msg.split(",")[1])
         img = Image.open(io.BytesIO(img_bytes))
-        
-        # Show live image
+
+        # 🔍 Debug: Show received image
         image_data.image(img, caption="Live Frame", use_column_width=True)
-        
+
         # Predict Drowsiness
         label, confidence, color = predict_drowsiness(img)
-        prediction_text.markdown(f"### Prediction: <span style='color:{color};'>{label}</span> ({confidence:.2f})", unsafe_allow_html=True)
+
+        # Show prediction result
+        prediction_text.markdown(
+            f"### Prediction: <span style='color:{color};'>{label}</span> ({confidence:.2f})",
+            unsafe_allow_html=True
+        )
+    except Exception as e:
+        st.error(f"Error processing image: {e}")
