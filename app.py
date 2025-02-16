@@ -1,58 +1,26 @@
-import streamlit as st
 import torch
-import cv2
-import numpy as np
-import tempfile
 import os
 import urllib.request
-from PIL import Image
+import streamlit as st
 
-# ✅ Set page title and description
-st.set_page_config(page_title="Real-Time Drowsiness Detection", layout="wide")
-st.title("💤 Real-Time Drowsiness Detection")
-st.write("This application detects drowsiness using a deep learning model.")
+# ✅ Set model path
+MODEL_PATH = "best.pt"
+MODEL_URL = "https://your-cloud-storage.com/best.pt"  # Replace with actual model link
 
-# ✅ Function to download the model if missing
+# ✅ Function to Load Model
 @st.cache_resource
 def load_model():
-    model_path = "best.pt"
-    model_url = "https://your-cloud-storage.com/best.pt"  # 🔹 Replace with actual model URL
-
-    # Download model if not found
-    if not os.path.exists(model_path):
-        st.info("Downloading model file, please wait...")
-        urllib.request.urlretrieve(model_url, model_path)
-        st.success("Model downloaded successfully!")
-
-    # Load YOLOv5 model
-    model = torch.hub.load("ultralytics/yolov5", "custom", path=model_path, source="local")
-    model.eval()
+    if not os.path.exists(MODEL_PATH):
+        st.warning("Downloading model... Please wait.")
+        urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
+    
+    model = torch.hub.load("ultralytics/yolov5", "custom", path=MODEL_PATH, source="local")
     return model
 
-# ✅ Load the YOLO model
-model = load_model()
+st.title("💤 Real-Time Drowsiness Detection")
 
-# ✅ Function to process the image and detect drowsiness
-def detect_drowsiness(image):
-    img = np.array(image.convert("RGB"))
-    results = model(img)  # Run YOLOv5 model
-    return results
-
-# ✅ Webcam feed
-st.write("### Webcam feed for real-time drowsiness detection")
-video = st.camera_input("Click 'Take Photo' to capture an image")
-
-if video:
-    # Save uploaded image
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
-        temp_file.write(video.getvalue())
-        temp_path = temp_file.name
-
-    # Read image with OpenCV
-    img = Image.open(temp_path)
-    
-    # Detect drowsiness
-    results = detect_drowsiness(img)
-
-    # Display image with detections
-    st.image(results.render()[0], caption="Detection Results", use_column_width=True)
+try:
+    model = load_model()
+    st.success("Model loaded successfully!")
+except Exception as e:
+    st.error(f"Error loading model: {e}")
