@@ -73,7 +73,7 @@ def predict_drowsiness(image):
 # --- Receive Live Data ---
 st.markdown("### **Live Prediction**")
 while True:
-    msg = st.experimental_get_query_params().get("img", [""])[0]
+    msg = st.query_params.get("img", [""])[0]  # ✅ Replaced old method with st.query_params
     if msg:
         # Decode base64 image
         img_bytes = base64.b64decode(msg.split(",")[1])
