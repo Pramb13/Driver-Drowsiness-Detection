@@ -6,14 +6,11 @@ import os
 import time
 from PIL import Image
 from io import BytesIO
-import pygame  # For playing audio alerts
-
-# Initialize pygame mixer for audio alerts
-pygame.mixer.init()
-alert_sound = "audio_alert.wav"
 
 # Load YOLOv5 model
 MODEL_PATH = "best.pt"
+ALERT_SOUND = "audio_alert.wav"
+
 st.title("🚘 Driver Drowsiness Detection System")
 
 @st.cache_resource
@@ -38,15 +35,17 @@ def detect_drowsiness(image):
     return detections, None
 
 def play_alert():
-    pygame.mixer.music.load(alert_sound)
-    pygame.mixer.music.play()
-    time.sleep(1)  # Allow alert to play
+    try:
+        with open(ALERT_SOUND, "rb") as f:
+            audio_bytes = f.read()
+        st.audio(audio_bytes, format="audio/wav")
+    except Exception as e:
+        st.error(f"Error playing alert: {e}")
 
 def main():
     st.sidebar.header("Upload an Image or Use Webcam")
     image_file = st.sidebar.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
     use_webcam = st.sidebar.checkbox("Use Webcam")
-    start_detection = st.sidebar.button("Start Detection")
     
     if image_file is not None:
         image = Image.open(image_file)
@@ -63,10 +62,16 @@ def main():
     if use_webcam:
         stframe = st.empty()
         cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            st.error("Failed to access webcam")
+            return
+        
+        start_detection = st.sidebar.button("Start Detection")
+        
         while start_detection:
             ret, frame = cap.read()
             if not ret:
-                st.error("Failed to access webcam")
+                st.error("Failed to capture frame")
                 break
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             detections, error = detect_drowsiness(frame_rgb)
@@ -83,6 +88,7 @@ def main():
                     st.warning("🚨 Drowsiness Detected! Playing alert sound.")
                     play_alert()
             stframe.image(frame, channels="BGR")
+        
         cap.release()
 
 if __name__ == "__main__":
