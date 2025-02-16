@@ -1,9 +1,8 @@
 streamlit
-streamlit-webrtc
 torch
+torchvision
 transformers
-Pillow
 numpy
-seaborn
-pdfkit
-python-opencv
+pillow
+streamlit-webrtc
+av
