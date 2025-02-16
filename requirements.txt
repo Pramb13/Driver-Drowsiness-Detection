@@ -4,4 +4,4 @@ aiortc
 torch
 torchvision
 numpy
-
+pygame
