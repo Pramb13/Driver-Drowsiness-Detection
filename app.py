@@ -1,77 +1,89 @@
 import streamlit as st
 import torch
-import os
-import subprocess
+import cv2
 import numpy as np
-import av
-from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
+import os
+import time
+from PIL import Image
+from io import BytesIO
+import pygame  # For playing audio alerts
 
-# Install YOLOv5 (if not available)
-subprocess.run(["pip", "install", "ultralytics"], check=True)
+# Initialize pygame mixer for audio alerts
+pygame.mixer.init()
+alert_sound = "audio_alert.wav"
 
-# Load YOLOv5 Model
+# Load YOLOv5 model
+MODEL_PATH = "best.pt"
+st.title("🚘 Driver Drowsiness Detection System")
+
 @st.cache_resource
 def load_model():
-    MODEL_PATH = "best.pt"
-
-    if not os.path.exists(MODEL_PATH):
-        st.error("⚠️ Model file not found! Please upload `best.pt` below.")
-        return None
-
     try:
-        model = torch.hub.load(
-            "ultralytics/yolov5",
-            "custom",
-            path=MODEL_PATH,
-            source="github",
-            force_reload=True,
-        )
-        st.success("✅ Model Loaded Successfully!")
+        model = torch.hub.load("ultralytics/yolov5", "custom", path=MODEL_PATH, force_reload=True)
         return model
     except Exception as e:
-        st.error(f"🚨 Error loading model: {e}")
+        st.error(f"Error loading model: {e}")
         return None
 
-
-# Webcam Processing for Drowsiness Detection
-class VideoProcessor(VideoProcessorBase):
-    def __init__(self):
-        self.model = load_model()
-
-    def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-
-        if self.model is not None:
-            results = self.model(img)
-            for det in results.xyxy[0]:
-                x1, y1, x2, y2, conf, cls = det.tolist()
-                label = f"{self.model.names[int(cls)]} {conf:.2f}"
-                img = cv2.putText(img, label, (int(x1), int(y1) - 10),
-                                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                img = cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-
-# Streamlit UI
-st.title("🛑 Driver Drowsiness Detection")
-
-# Upload model if missing
-uploaded_file = st.file_uploader("Upload `best.pt` Model", type=["pt"])
-if uploaded_file:
-    with open("best.pt", "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    st.success("✅ Model uploaded successfully! Refresh to use it.")
-
-# Load model
 model = load_model()
 
-# Start webcam
-if model is not None:
-    webrtc_streamer(
-        key="drowsiness-detection",
-        video_processor_factory=VideoProcessor,
-        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-    )
-else:
-    st.warning("⚠️ Please upload a valid YOLOv5 model to proceed.")
+def detect_drowsiness(image):
+    if model is None:
+        return None, "Model not loaded"
+    
+    # Convert image to format required by YOLOv5
+    img_array = np.array(image)
+    results = model(img_array)
+    detections = results.pandas().xyxy[0]  # Get detected objects
+    return detections, None
+
+def play_alert():
+    pygame.mixer.music.load(alert_sound)
+    pygame.mixer.music.play()
+    time.sleep(1)  # Allow alert to play
+
+def main():
+    st.sidebar.header("Upload an Image or Use Webcam")
+    image_file = st.sidebar.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+    use_webcam = st.sidebar.checkbox("Use Webcam")
+    start_detection = st.sidebar.button("Start Detection")
+    
+    if image_file is not None:
+        image = Image.open(image_file)
+        st.image(image, caption="Uploaded Image", use_column_width=True)
+        detections, error = detect_drowsiness(image)
+        if error:
+            st.error(error)
+        else:
+            st.write(detections)
+            if not detections.empty and 'drowsy' in detections['name'].values:
+                st.warning("🚨 Drowsiness Detected! Playing alert sound.")
+                play_alert()
+    
+    if use_webcam:
+        stframe = st.empty()
+        cap = cv2.VideoCapture(0)
+        while start_detection:
+            ret, frame = cap.read()
+            if not ret:
+                st.error("Failed to access webcam")
+                break
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            detections, error = detect_drowsiness(frame_rgb)
+            if error:
+                st.error(error)
+                break
+            for _, row in detections.iterrows():
+                x1, y1, x2, y2 = int(row["xmin"]), int(row["ymin"]), int(row["xmax"]), int(row["ymax"])
+                label = row["name"]
+                conf = row["confidence"]
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.putText(frame, f"{label}: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                if label == 'drowsy':
+                    st.warning("🚨 Drowsiness Detected! Playing alert sound.")
+                    play_alert()
+            stframe.image(frame, channels="BGR")
+        cap.release()
+
+if __name__ == "__main__":
+    main()
