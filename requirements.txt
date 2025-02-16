@@ -1,6 +1,6 @@
 streamlit
-opencv-python
-numpy
+streamlit-webrtc
+aiortc
 torch
-pillow
-yolov5
+torchvision
+numpy
