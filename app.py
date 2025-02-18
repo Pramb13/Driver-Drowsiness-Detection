@@ -1,69 +1,20 @@
 import streamlit as st
 import cv2
 import numpy as np
-import mediapipe as mp
 import time
-from scipy.spatial import distance
-from PIL import Image
+import mediapipe as mp
+
+# Initialize mediapipe face mesh model for detecting facial landmarks
+mp_face_mesh = mp.solutions.face_mesh
+face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+
+# Initialize webcam capture
+st.title("🚘 Driver Drowsiness Detection System")
 
 # Constants
 ALERT_SOUND = "audio_alert.wav"
-EYE_AR_THRESH = 0.25  # Eye Aspect Ratio threshold for drowsiness
-EYE_AR_CONSEC_FRAMES = 20  # Number of consecutive frames to trigger an alert
-
-st.title("🚘 Driver Drowsiness Detection System (No Dlib)")
-
-# Initialize MediaPipe face and landmarks detector
-mp_face_mesh = mp.solutions.face_mesh
-mp_drawing = mp.solutions.drawing_utils
-
-# Start mediapipe FaceMesh model
-face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True)
-
-def eye_aspect_ratio(eye):
-    """Calculate the Eye Aspect Ratio (EAR)."""
-    A = distance.euclidean(eye[1], eye[5])
-    B = distance.euclidean(eye[2], eye[4])
-    C = distance.euclidean(eye[0], eye[3])
-    return (A + B) / (2.0 * C)
-
-def detect_drowsiness(image):
-    """Detects drowsiness in an image and returns the annotated image."""
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    results = face_mesh.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    
-    if not results.multi_face_landmarks:
-        return image
-    
-    for landmarks in results.multi_face_landmarks:
-        # Get eye landmarks (indices 33-133 for left eye, 362-463 for right eye)
-        left_eye = [(landmarks.landmark[i].x, landmarks.landmark[i].y) for i in range(33, 133)]
-        right_eye = [(landmarks.landmark[i].x, landmarks.landmark[i].y) for i in range(362, 463)]
-        
-        # Normalize landmark coordinates
-        h, w, _ = image.shape
-        left_eye = [(int(p[0] * w), int(p[1] * h)) for p in left_eye]
-        right_eye = [(int(p[0] * w), int(p[1] * h)) for p in right_eye]
-        
-        # Calculate Eye Aspect Ratio (EAR)
-        left_ear = eye_aspect_ratio(left_eye)
-        right_ear = eye_aspect_ratio(right_eye)
-        ear = (left_ear + right_ear) / 2.0
-        
-        # Draw eyes
-        for (x, y) in left_eye + right_eye:
-            cv2.circle(image, (x, y), 2, (0, 255, 0), -1)
-        
-        # Check for drowsiness
-        if ear < EYE_AR_THRESH:
-            cv2.putText(image, "DROWSINESS ALERT!", (20, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            play_alert()
-
-    return image
 
 def play_alert():
-    """Play alert sound."""
     try:
         with open(ALERT_SOUND, "rb") as f:
             audio_bytes = f.read()
@@ -71,45 +22,104 @@ def play_alert():
     except Exception as e:
         st.error(f"Error playing alert: {e}")
 
-# Sidebar controls
-st.sidebar.header("📸 Upload an Image or Use Webcam")
-image_file = st.sidebar.file_uploader("📂 Upload an image", type=["jpg", "jpeg", "png"])
+def calculate_eye_aspect_ratio(eye_landmarks):
+    # Calculate the Euclidean distance between the two vertical eye landmarks
+    # and the two horizontal eye landmarks to calculate EAR
+    vertical_1 = np.linalg.norm(eye_landmarks[1] - eye_landmarks[5])
+    vertical_2 = np.linalg.norm(eye_landmarks[2] - eye_landmarks[4])
+    horizontal = np.linalg.norm(eye_landmarks[0] - eye_landmarks[3])
+    ear = (vertical_1 + vertical_2) / (2.0 * horizontal)
+    return ear
 
-if "webcam_active" not in st.session_state:
-    st.session_state.webcam_active = False
+def detect_drowsiness(frame):
+    # Convert frame to RGB
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(frame_rgb)
+    
+    if results.multi_face_landmarks:
+        for face_landmarks in results.multi_face_landmarks:
+            # Get landmarks for the eyes
+            left_eye = []
+            right_eye = []
+            for i in [33, 133, 160, 158, 153, 144]:  # Left eye landmarks
+                left_eye.append([face_landmarks.landmark[i].x, face_landmarks.landmark[i].y])
+            for i in [362, 263, 387, 385, 380, 373]:  # Right eye landmarks
+                right_eye.append([face_landmarks.landmark[i].x, face_landmarks.landmark[i].y])
+            
+            # Convert to numpy arrays for calculation
+            left_eye = np.array(left_eye)
+            right_eye = np.array(right_eye)
 
-if st.sidebar.button("📷 Toggle Webcam"):
-    st.session_state.webcam_active = not st.session_state.webcam_active
+            # Calculate Eye Aspect Ratio (EAR)
+            left_ear = calculate_eye_aspect_ratio(left_eye)
+            right_ear = calculate_eye_aspect_ratio(right_eye)
+            ear = (left_ear + right_ear) / 2.0  # Average EAR for both eyes
 
-# Process Uploaded Image
-if image_file is not None:
-    image = Image.open(image_file)
-    image = np.array(image)  # Convert to OpenCV format
-    st.image(image, caption="📌 Uploaded Image", use_container_width=True)
+            # Set threshold for drowsiness detection
+            EAR_THRESHOLD = 0.22
 
-    processed_image = detect_drowsiness(image)
-    st.image(processed_image, caption="🔍 Processed Image", use_container_width=True)
+            # Check if EAR is below the threshold (indicating drowsiness)
+            if ear < EAR_THRESHOLD:
+                return True
+    return False
 
-# Webcam Processing
-if st.session_state.webcam_active:
-    stframe = st.empty()
-    cap = cv2.VideoCapture(0)
-
-    if not cap.isOpened():
-        st.error("❌ Failed to access webcam.")
-    else:
-        drowsy_frame_count = 0
-
-        while st.session_state.webcam_active:
+def main():
+    st.sidebar.header("Upload an Image or Use Webcam")
+    image_file = st.sidebar.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+    use_webcam = st.sidebar.checkbox("Use Webcam")
+    
+    if image_file is not None:
+        image = st.image(image_file, caption="Uploaded Image", use_column_width=True)
+        frame = np.array(image)
+        if detect_drowsiness(frame):
+            st.warning("🚨 Drowsiness Detected! Playing alert sound.")
+            play_alert()
+    
+    if use_webcam:
+        stframe = st.empty()
+        cap = cv2.VideoCapture(0)  # Accessing the webcam
+        
+        if not cap.isOpened():
+            st.error("❌ Failed to access webcam")
+            return
+        
+        start_detection = st.sidebar.button("Start Detection")
+        
+        while start_detection:
             ret, frame = cap.read()
             if not ret:
-                st.error("❌ Failed to capture frame.")
+                st.error("❌ Failed to capture frame")
                 break
-
+            
+            # Convert frame to RGB for Mediapipe processing
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            processed_frame = detect_drowsiness(frame_rgb)
+            results = face_mesh.process(frame_rgb)
+            
+            if results.multi_face_landmarks:
+                for face_landmarks in results.multi_face_landmarks:
+                    left_eye = []
+                    right_eye = []
+                    for i in [33, 133, 160, 158, 153, 144]:
+                        left_eye.append([face_landmarks.landmark[i].x, face_landmarks.landmark[i].y])
+                    for i in [362, 263, 387, 385, 380, 373]:
+                        right_eye.append([face_landmarks.landmark[i].x, face_landmarks.landmark[i].y])
+                    
+                    left_eye = np.array(left_eye)
+                    right_eye = np.array(right_eye)
 
-            # Display processed frame
-            stframe.image(processed_frame, channels="BGR")
+                    left_ear = calculate_eye_aspect_ratio(left_eye)
+                    right_ear = calculate_eye_as_ratio(right_eye)
+                    ear = (left_ear + right_ear) / 2.0
 
+                    EAR_THRESHOLD = 0.22
+                    if ear < EAR_THRESHOLD:
+                        st.warning("🚨 Drowsiness Detected! Playing alert sound.")
+                        play_alert()
+            
+            # Display frame with detection
+            stframe.image(frame, channels="BGR")
+        
         cap.release()
+
+if __name__ == "__main__":
+    main()
