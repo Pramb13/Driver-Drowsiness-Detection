@@ -6,3 +6,7 @@ torchvision
 numpy
 pygame
 dlib
+opencv-python
+scipy
+numpy
+cmake
