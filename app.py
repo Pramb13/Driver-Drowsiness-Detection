@@ -12,7 +12,7 @@ face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_con
 st.title("🚘 Driver Drowsiness Detection System")
 
 # Constants
-ALERT_SOUND = "audio_alert.wav"
+ALERT_SOUND = "audio_alert.wav"  # Make sure this file is in the right directory
 
 def play_alert():
     try:
@@ -108,7 +108,7 @@ def main():
                     right_eye = np.array(right_eye)
 
                     left_ear = calculate_eye_aspect_ratio(left_eye)
-                    right_ear = calculate_eye_as_ratio(right_eye)
+                    right_ear = calculate_eye_aspect_ratio(right_eye)
                     ear = (left_ear + right_ear) / 2.0
 
                     EAR_THRESHOLD = 0.22
