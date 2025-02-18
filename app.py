@@ -1,7 +1,7 @@
 import streamlit as st
 import cv2
 import numpy as np
-import dlib
+import mediapipe as mp
 import time
 from scipy.spatial import distance
 from PIL import Image
@@ -11,15 +11,14 @@ ALERT_SOUND = "audio_alert.wav"
 EYE_AR_THRESH = 0.25  # Eye Aspect Ratio threshold for drowsiness
 EYE_AR_CONSEC_FRAMES = 20  # Number of consecutive frames to trigger an alert
 
-st.title("🚘 Driver Drowsiness Detection System (Without YOLOv5)")
+st.title("🚘 Driver Drowsiness Detection System (No Dlib)")
 
-# Load Dlib face detector and shape predictor
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")  # Download from dlib website
+# Initialize MediaPipe face and landmarks detector
+mp_face_mesh = mp.solutions.face_mesh
+mp_drawing = mp.solutions.drawing_utils
 
-# Eye landmarks
-(left_start, left_end) = (42, 48)
-(right_start, right_end) = (36, 42)
+# Start mediapipe FaceMesh model
+face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True)
 
 def eye_aspect_ratio(eye):
     """Calculate the Eye Aspect Ratio (EAR)."""
@@ -31,27 +30,34 @@ def eye_aspect_ratio(eye):
 def detect_drowsiness(image):
     """Detects drowsiness in an image and returns the annotated image."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    faces = detector(gray)
-
-    for face in faces:
-        shape = predictor(gray, face)
-        shape = np.array([(shape.part(i).x, shape.part(i).y) for i in range(68)])
-
-        left_eye = shape[left_start:left_end]
-        right_eye = shape[right_start:right_end]
-
+    results = face_mesh.process(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    
+    if not results.multi_face_landmarks:
+        return image
+    
+    for landmarks in results.multi_face_landmarks:
+        # Get eye landmarks (indices 33-133 for left eye, 362-463 for right eye)
+        left_eye = [(landmarks.landmark[i].x, landmarks.landmark[i].y) for i in range(33, 133)]
+        right_eye = [(landmarks.landmark[i].x, landmarks.landmark[i].y) for i in range(362, 463)]
+        
+        # Normalize landmark coordinates
+        h, w, _ = image.shape
+        left_eye = [(int(p[0] * w), int(p[1] * h)) for p in left_eye]
+        right_eye = [(int(p[0] * w), int(p[1] * h)) for p in right_eye]
+        
+        # Calculate Eye Aspect Ratio (EAR)
         left_ear = eye_aspect_ratio(left_eye)
         right_ear = eye_aspect_ratio(right_eye)
-        avg_ear = (left_ear + right_ear) / 2.0
-
+        ear = (left_ear + right_ear) / 2.0
+        
         # Draw eyes
-        for (x, y) in np.concatenate((left_eye, right_eye), axis=0):
+        for (x, y) in left_eye + right_eye:
             cv2.circle(image, (x, y), 2, (0, 255, 0), -1)
-
-        # Check drowsiness
-        if avg_ear < EYE_AR_THRESH:
-            cv2.putText(image, "DROWSINESS ALERT!", (face.left(), face.top() - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        
+        # Check for drowsiness
+        if ear < EYE_AR_THRESH:
+            cv2.putText(image, "DROWSINESS ALERT!", (20, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             play_alert()
 
     return image
@@ -101,35 +107,9 @@ if st.session_state.webcam_active:
                 break
 
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = detector(gray)
+            processed_frame = detect_drowsiness(frame_rgb)
 
-            for face in faces:
-                shape = predictor(gray, face)
-                shape = np.array([(shape.part(i).x, shape.part(i).y) for i in range(68)])
-
-                left_eye = shape[left_start:left_end]
-                right_eye = shape[right_start:right_end]
-
-                left_ear = eye_aspect_ratio(left_eye)
-                right_ear = eye_aspect_ratio(right_eye)
-                avg_ear = (left_ear + right_ear) / 2.0
-
-                # Draw landmarks
-                for (x, y) in np.concatenate((left_eye, right_eye), axis=0):
-                    cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
-
-                # Check drowsiness
-                if avg_ear < EYE_AR_THRESH:
-                    drowsy_frame_count += 1
-                    if drowsy_frame_count >= EYE_AR_CONSEC_FRAMES:
-                        cv2.putText(frame, "DROWSINESS ALERT!", (face.left(), face.top() - 10),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                        st.warning("🚨 Drowsiness Detected! Playing alert sound.")
-                        play_alert()
-                else:
-                    drowsy_frame_count = 0
-
-            stframe.image(frame, channels="BGR")
+            # Display processed frame
+            stframe.image(processed_frame, channels="BGR")
 
         cap.release()
