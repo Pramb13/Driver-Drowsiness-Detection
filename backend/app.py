@@ -1,30 +1,27 @@
-from flask import Flask, Response, jsonify
+import os
 import cv2
-import mediapipe as mp
 import numpy as np
-import sqlite3
+import pinecone
+import uuid
+import mediapipe as mp
+from flask import Flask, Response, jsonify
 
 app = Flask(__name__)
 mp_face_mesh = mp.solutions.face_mesh.FaceMesh()
 cap = cv2.VideoCapture(0)
 
-# Initialize database
-def init_db():
-    conn = sqlite3.connect("drowsiness.db")
-    cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY, status TEXT)")
-    conn.commit()
-    conn.close()
+# Initialize Pinecone
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+index_name = "drowsiness-logs"
 
-init_db()
+# Connect to Pinecone
+pc = pinecone.Pinecone(api_key=PINECONE_API_KEY)
+index = pc.Index(index_name)
 
-# Function to log drowsiness
+# Function to log drowsiness in Pinecone
 def log_drowsiness(status):
-    conn = sqlite3.connect("drowsiness.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO logs (status) VALUES (?)", (status,))
-    conn.commit()
-    conn.close()
+    unique_id = str(uuid.uuid4())  # Generate unique ID
+    index.upsert(vectors=[(unique_id, [1 if status == "Drowsy" else 0])])
 
 # Function to detect drowsiness
 def detect_drowsiness(frame):
@@ -52,11 +49,7 @@ def video_feed():
 # API Endpoint: Fetch Drowsiness Logs
 @app.route('/logs', methods=['GET'])
 def get_logs():
-    conn = sqlite3.connect("drowsiness.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM logs")
-    logs = cursor.fetchall()
-    conn.close()
+    logs = index.fetch([x['id'] for x in index.describe_index_stats()['namespaces'][''].values()])
     return jsonify(logs)
 
 if __name__ == '__main__':
